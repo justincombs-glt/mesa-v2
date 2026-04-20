@@ -49,7 +49,9 @@ export default async function StudentAdminPage({ params }: { params: { id: strin
   if (student.profile_id) {
     const { data } = await supabase
       .from('profiles').select('id, full_name, email').eq('id', student.profile_id).single();
-    linkedStudentProfile = (data as Pick<Profile, 'id' | 'full_name' | 'email'>) ?? null;
+    linkedStudentProfile = data
+      ? (data as unknown as Pick<Profile, 'id' | 'full_name' | 'email'>)
+      : null;
   }
 
   return (
