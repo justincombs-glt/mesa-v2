@@ -1,6 +1,5 @@
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PracticePlansClient } from './PracticePlansClient';
 import type { PracticePlan, PracticePlanItem } from '@/lib/supabase/types';
