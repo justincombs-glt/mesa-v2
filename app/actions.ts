@@ -707,3 +707,229 @@ export async function deletePracticePlan(formData: FormData) {
   revalidatePath('/dashboard/practice-plans');
   return { ok: true };
 }
+
+// ============================================================================
+// Goal plans (admin + director)
+// ============================================================================
+
+export async function createGoalPlan(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const starts_on = String(formData.get('starts_on') ?? '').trim() || null;
+  const ends_on = String(formData.get('ends_on') ?? '').trim() || null;
+  const agreement_notes = String(formData.get('agreement_notes') ?? '').trim() || null;
+
+  if (!student_id) return { ok: false, error: 'Student is required.' };
+  if (!title) return { ok: false, error: 'Plan title is required.' };
+
+  const { data, error } = await (supabase.from('goal_plans') as Any)
+    .insert({ student_id, title, starts_on, ends_on, agreement_notes, status: 'draft', created_by: user.id })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/goal-management');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateGoalPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const status = String(formData.get('status') ?? '').trim() as 'draft' | 'active' | 'completed' | 'archived';
+  const starts_on = String(formData.get('starts_on') ?? '').trim() || null;
+  const ends_on = String(formData.get('ends_on') ?? '').trim() || null;
+  const agreement_notes = String(formData.get('agreement_notes') ?? '').trim() || null;
+
+  if (!id || !title) return { ok: false, error: 'Missing fields' };
+  const validStatuses = ['draft', 'active', 'completed', 'archived'];
+  if (!validStatuses.includes(status)) return { ok: false, error: 'Invalid status' };
+
+  const { error } = await (supabase.from('goal_plans') as Any)
+    .update({ title, status, starts_on, ends_on, agreement_notes })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/goal-management');
+  revalidatePath(`/dashboard/goal-management/${id}`);
+  return { ok: true };
+}
+
+export async function deleteGoalPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('goal_plans') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/goal-management');
+  return { ok: true };
+}
+
+// Goals within a plan (1-3 enforced in UI)
+
+export async function createGoalInPlan(formData: FormData) {
+  const supabase = createClient();
+
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const template_id = String(formData.get('template_id') ?? '').trim() || null;
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  const domain = (String(formData.get('domain') ?? '').trim() || null) as 'on_ice' | 'off_ice' | null;
+  const category = String(formData.get('category') ?? '').trim() || null;
+  const target_value = String(formData.get('target_value') ?? '').trim() || null;
+  const target_unit = String(formData.get('target_unit') ?? '').trim() || null;
+  const due_date = String(formData.get('due_date') ?? '').trim() || null;
+  const seq_str = String(formData.get('sequence') ?? '').trim();
+  const sequence = seq_str ? parseInt(seq_str, 10) : 1;
+
+  if (!plan_id || !title) return { ok: false, error: 'Plan and title are required.' };
+
+  const { error } = await (supabase.from('goal_plan_goals') as Any).insert({
+    plan_id, template_id, title, description, domain, category,
+    target_value, target_unit, due_date, sequence, status: 'active',
+  });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function updateGoalInPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  const target_value = String(formData.get('target_value') ?? '').trim() || null;
+  const target_unit = String(formData.get('target_unit') ?? '').trim() || null;
+  const current_value = String(formData.get('current_value') ?? '').trim() || null;
+  const progress_str = String(formData.get('progress_pct') ?? '').trim();
+  const progress_pct = progress_str ? Math.min(100, Math.max(0, parseInt(progress_str, 10))) : 0;
+  const due_date = String(formData.get('due_date') ?? '').trim() || null;
+  const status = String(formData.get('status') ?? 'active').trim();
+  const achieved_at = status === 'achieved' ? new Date().toISOString() : null;
+
+  if (!id || !title) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('goal_plan_goals') as Any).update({
+    title, description, target_value, target_unit, current_value,
+    progress_pct, due_date, status, achieved_at,
+  }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function deleteGoalFromPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const plan_id = String(formData.get('plan_id') ?? '');
+  const { error } = await (supabase.from('goal_plan_goals') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+// Performance tests attached to a plan
+
+export async function attachTestToPlan(formData: FormData) {
+  const supabase = createClient();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const test_id = String(formData.get('test_id') ?? '').trim();
+  const baseline_str = String(formData.get('baseline_value') ?? '').trim();
+  const baseline_value = baseline_str ? parseFloat(baseline_str) : null;
+  const target_str = String(formData.get('target_value') ?? '').trim();
+  const target_value = target_str ? parseFloat(target_str) : null;
+  const target_unit = String(formData.get('target_unit') ?? '').trim() || null;
+
+  if (!plan_id || !test_id) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('goal_plan_tests') as Any).insert({
+    plan_id, test_id, baseline_value, target_value, target_unit,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function detachTestFromPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const plan_id = String(formData.get('plan_id') ?? '');
+  const { error } = await (supabase.from('goal_plan_tests') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+// Reviews
+
+export async function createReview(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const review_type = String(formData.get('review_type') ?? 'ad_hoc').trim() as 'scheduled' | 'ad_hoc';
+  const scheduled_date = String(formData.get('scheduled_date') ?? '').trim() || null;
+
+  if (!plan_id) return { ok: false, error: 'Plan is required.' };
+
+  const { data, error } = await (supabase.from('reviews') as Any)
+    .insert({ plan_id, review_type, scheduled_date, reviewer_id: user.id })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateReview(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const summary = String(formData.get('summary') ?? '').trim() || null;
+  const concerns = String(formData.get('concerns') ?? '').trim() || null;
+  const next_steps = String(formData.get('next_steps') ?? '').trim() || null;
+  const scheduled_date = String(formData.get('scheduled_date') ?? '').trim() || null;
+
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const { error } = await (supabase.from('reviews') as Any).update({
+    summary, concerns, next_steps, scheduled_date,
+  }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function completeReview(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const { error } = await (supabase.from('reviews') as Any).update({
+    completed_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function deleteReview(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const plan_id = String(formData.get('plan_id') ?? '');
+  const { error } = await (supabase.from('reviews') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}

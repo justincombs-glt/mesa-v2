@@ -1,216 +1,234 @@
-# MESA v2 — Phase 3a: Director Module (Part 1)
+# MESA v2 — Phase 3b: Director Module (Part 2)
 
-Builds on Phase 2 + 2.5. Three director sidebar items now real:
+Completes the Director module. Both remaining director sidebar items are now real:
 
-- **Add Users** (`/dashboard/invite`)
-- **Students** (`/dashboard/students`) + per-student admin
-- **Practice Plans** (`/dashboard/practice-plans`) + per-plan editor
-
-The remaining director pages (**Goal Management**, **Performance Management**) are still stubs and arrive in Phase 3b.
+- **Goal Management** (`/dashboard/goal-management`)
+- **Performance Management** (`/dashboard/performance-management`)
 
 ---
 
-## What's new in Phase 3a
+## What's new in Phase 3b
 
-### Add Users (`/dashboard/invite`)
+### Goal Management list (`/dashboard/goal-management`)
+- Search by plan title or student name
+- Filter by status (draft / active / completed / archived)
+- Each row shows plan title, student (with jersey if present), status pill, goals / tests / reviews counts
+- Click a row → plan detail page
+- **New plan** button launches a modal to pick a student and set basics
 
-Invite-only flavor for director. Send invites with email + role + optional note. Pending invites listed below with revoke option.
+### Goal Plan detail (`/dashboard/goal-management/[planId]`)
 
-The admin's full Users page (with role-change for existing users) stays separate — directors don't need that level of control.
+Four stacked sections:
 
-### Students directory (`/dashboard/students`)
+**1. Plan metadata** (status, date range, agreement notes)
+- Edit button swaps the header into a full edit form
+- Status change via dropdown (draft → active → completed → archived)
+- Delete button (cascades to goals, test links, reviews)
 
-- Search by name, jersey, position, team label
-- Active students at top, inactive collapsed below with "Reactivate" buttons
-- Each row shows jersey number, name, position, dominant hand, team label, parent count, and a "Has login" badge if a student account is linked
-- "Enroll student" button opens a modal with all v1 fields preserved (full name required, everything else optional)
+**2. Goals section** — 1-3 goals per plan (enforced in UI)
+- Add Goal button disabled at 3 goals
+- Each goal card shows domain + category pills, target value, current value, progress bar, due date, status pill
+- "Start from template" dropdown pre-fills the form from your Goal Templates library
+- Edit goal: title, description, target/current/progress/due date/status
+- Status: active / achieved / abandoned (achieved auto-sets `achieved_at` timestamp)
+- Delete goal button inside edit modal
 
-### Per-student admin (`/dashboard/students/[id]`)
+**3. Performance Tests section**
+- Attach individual performance tests from the library to this plan
+- Each attached test shows:
+  - Baseline value (set at attach time, or edited)
+  - Latest recorded value (pulled from `performance_test_results` for this student × test)
+  - **Direction-aware trend indicator** — ↑ improving, ↓ declining, = flat, — no data
+  - "Lower is better" tests flip the trend logic correctly
+- Detach button per test
+- Empty state: "No performance tests attached yet" with guidance
 
-Three sections in a 3+2 column layout:
+**4. Reviews section** (Option C — review form with basic fields; auto-populated data deferred to Phase 7)
+- **New review** modal — type (scheduled / ad-hoc) + scheduled date
+- List of existing reviews in a card with status pills (Completed / Draft)
+- Click a review → edit modal with:
+  - Summary, Concerns, Next Steps (all textareas)
+  - Save draft (stays editable)
+  - Complete review (locks it — completed reviews become read-only documents)
+  - Delete (only before completion)
+- Completed reviews show a "locked" indicator + readonly fields
 
-1. **Edit form** (left, larger): all student fields, save/deactivate
-2. **Linked parents** (right top): shows linked parents with relationship + primary status; add by email; unlink button
-3. **Student login** (right bottom): if a student profile is linked, shows it; otherwise lets you link by email (validates the target user has role='student')
+### Performance Management (`/dashboard/performance-management`)
 
-Parent and student-link workflows both **require the target user to have signed up first**. You'll see a clear error message if the email isn't found.
+Read-only cross-cutting activity view.
 
-### Practice Plans (`/dashboard/practice-plans`)
+- Three stat cards at top: Games / Practices / Off-Ice Workouts
+- Filter by:
+  - Activity type
+  - Specific student
+  - Date range (from / to)
+- Each row shows date, type pill, game result (if applicable), participants, duration
+- Empty state: "Once coaches log practices and trainers log workouts, everything shows here"
 
-- Card grid showing each plan with title, focus, drill count + skill count
-- "New plan" button creates a basic plan, then redirects to the editor
-
-### Practice Plan editor (`/dashboard/practice-plans/[id]`)
-
-- Left column: plan metadata (title, focus, description, target duration)
-- Right column: ordered list of items
-- **Add Drill** button opens picker → search drill library → click to add
-- **Add Skill** button opens form → free-text title + duration → add
-- **Reorder** items with ↑/↓ arrows
-- **Per-item duration override** + **per-item coach notes**
-- Live total minutes calculation
-- Click "Save plan" to commit all changes (item ordering, edits, deletions all flush at once)
-- "Delete plan" button with confirm
+Activities are created by **coaches** (practices, games) and **trainers** (workouts) in Phases 4 and 5. This page just consolidates them.
 
 ---
 
-## What's NOT in Phase 3a
+## What's NOT in Phase 3b
 
-- Goal Management page (Phase 3b)
-- Performance Management page (Phase 3b)
-- Coach can see Practice Plans but creating practices from them happens in Phase 4
-- Self-registration flow for students (still needs invite for now — Phase 6 adds public sign-up with age gate)
+- **Recording test results** — attached tests show "— no data" until Phase 5 trainer UI lands
+- **Review auto-population** — the attendance_pct, goal progress snapshots, test trend commentary fields exist in the schema but aren't auto-filled yet. Phase 7 adds that.
+- **Activity detail pages** — clicking an activity row does nothing yet. Detail pages ship with Phase 4/5 when activities can actually be created.
 
 ---
 
 ## No new SQL migration needed
 
-All tables exist from Phase 1's migration. Pure code deploy.
+All tables were created in Phase 1 + 2.5 migrations.
 
 ---
 
 ## Deployment
 
-1. Unzip `mesa-v2-phase3a-clean.zip`
-2. GitHub → `mesa-2` repo → Add file → Upload files → drag contents of unzipped `mesa/` folder
-3. Commit: `Phase 3a - Director module part 1`
-4. Vercel auto-deploys in ~90 seconds
+1. Unzip `mesa-v2-phase3b-clean.zip`
+2. GitHub → `mesa-2` → Add file → Upload files → drag contents of `mesa/` folder
+3. Commit: `Phase 3b - Goal Management + Performance Management`
+4. Vercel auto-deploys ~90s
 
 ---
 
-## Testing Phase 3a
+## Testing Phase 3b
 
-### As admin (you)
+Prerequisite: you need at least one student. If you haven't enrolled anyone from Phase 3a, do that first.
 
-You're admin so you have access to BOTH `/dashboard/users` and `/dashboard/invite` (your sidebar shows neither directly under admin — invite is in director's nav). To test director's invite page, navigate manually to `/dashboard/invite`.
+### Test 1 — Create a goal plan
 
-To properly test director-side, set up a director account:
+1. Director sidebar → **Goal Management** → empty state
+2. Click **New plan**
+3. Pick a student (e.g., Billy Smith)
+4. Title: "Fall 2025 Season Plan"
+5. Start date: 2025-09-01, End date: 2025-12-15
+6. Agreement notes: "Discussed with Billy and parents 8/20. Focus on skating and speed."
+7. Create plan → redirects to detail page
 
-1. Sidebar **Users** → Find a test user (or invite one) → change role to `director`
-2. Sign out
-3. Sign in as that director
-4. Sidebar shows: Home, Add Users, Students, Practice Plans, Goal Management, Performance Management, Profile
+### Test 2 — Add goals
 
-### Test 1 — Enroll a student
+1. On the plan detail page → **+ Add goal** in the Goals section
+2. Pick a template or skip
+3. Title: "Land 10 crossovers in a row"
+4. Domain: On-Ice, Category: Skating
+5. Target: 10, Unit: crossovers
+6. Due date: 2025-11-15
+7. Add goal → appears as card with 0% progress bar
+8. Add 2 more goals → button disables at 3
+9. Click a goal card → edit modal → change progress to 40%, current value to "4" → Save
+10. Progress bar fills to 40%
+11. Edit again → Status to "achieved" → Save → pill changes to achieved, bar turns green
 
-Director sidebar → **Students** → empty state → **Enroll your first student**
+### Test 3 — Attach performance tests
 
-- Full name: `Billy Smith`
-- DOB: any
-- Jersey: `17`
-- Position: Forward
-- Shoots: Left
-- Team label: `U14 AAA`
-- Notes: any
+Prerequisite: admin has created some Performance Tests (e.g., 40-yard dash, 1RM squat).
 
-Click **Enroll student** → returns to list with Billy showing.
+1. On plan detail → **+ Attach test** in Performance Tests section
+2. Pick "40-yard dash" from dropdown
+3. Description and unit auto-show in the info panel
+4. Baseline: 5.1, Target: 4.8, Unit pre-filled from test
+5. Attach test → row appears with baseline 5.1, latest "—", trend "no data"
+6. Attach another test → same
+7. Try the same test again — the dropdown won't show it (already attached)
 
-### Test 2 — Edit a student
+### Test 4 — Reviews
 
-Click Billy's row → student admin page → change jersey to `12` → Save → confirm "✓ Saved"
+1. Plan detail → **+ New review** in Reviews section
+2. Type: Scheduled, Scheduled date: 2025-09-30
+3. Create review → appears as card with "Scheduled" + "Draft" badges
+4. Click the review → edit modal
+5. Fill Summary: "Billy's first month. Strong on crossovers, needs more mile repeats."
+6. Fill Concerns: "Mile time hasn't improved. May need off-ice plan."
+7. Next steps: "Add 2 off-ice sessions per week focused on conditioning."
+8. Click **Save draft** → stays editable, badge still "Draft"
+9. Click **Complete review** → confirmation → modal closes → badge flips to "Completed"
+10. Click the completed review → fields are read-only, footer shows "Completed [date]. This review is locked."
 
-### Test 3 — Link a parent
+### Test 5 — Performance Management
 
-You'll need a parent profile to link to. Easiest path:
+1. Director sidebar → **Performance Management**
+2. Empty state: "No activities yet" with guidance about Phases 4/5
+3. Stats show 0/0/0
+4. Filters are present but unused (no data to filter)
 
-1. Director **Add Users** → Send invite with email `parent@test.com`, role `parent`
-2. Sign out
-3. Sign up at `/sign-in` with `parent@test.com` (you'll need to use Supabase to manually create this auth user since email links aren't wired yet — or use whatever sign-up method you have)
-4. After they sign up, sign back in as director
-5. Go to Billy's student page → **+ Link** → enter `parent@test.com` → relationship: Mother → Primary contact checked → Link parent
+When Phase 4 ships and a coach logs a practice, that practice appears here with its student roster.
 
-Parent appears in the Linked parents section with their info.
+### Test 6 — Edit plan metadata and status transitions
 
-### Test 4 — Create a practice plan
-
-Director sidebar → **Practice Plans** → empty state → **New plan**
-
-- Title: `U14 Skating Focus`
-- Focus: `Edge work and crossovers`
-- Description: any
-- Duration: 60
-
-Click **Create plan** → redirects to editor.
-
-### Test 5 — Add drills + skills to a plan
-
-Need at least one drill in the library first:
-1. Sign in as admin briefly → **Drills** → Add drill `Crossovers` (skating, 15 min)
-2. Sign back in as director → return to plan editor
-3. Click **+ Drill** → search/click `Crossovers` → appears as item 1
-4. Click **+ Skill** → title `Edge work`, duration 10 → appears as item 2
-5. Click **+ Skill** → title `Game-speed scrimmage`, duration 20 → appears as item 3
-6. Use ↑/↓ to reorder
-7. Click duration field on item 1 → change to 20
-8. Click **+ Notes** on item 2 → "Focus on outside edge"
-9. Click **Save plan** → confirm "✓ Saved"
-10. Refresh the page → all changes persist
-
-### Test 6 — Delete an item
-
-In editor → click × on any item → it disappears from the list (changes don't commit until you Save)
+1. Plan detail → **Edit plan** button in header
+2. Change status to "active" → Save → status pill updates
+3. Change dates, agreement notes → Save → persists
+4. Cancel works too
 
 ### Test 7 — Delete a plan
 
-In editor → "Delete plan" bottom-left → confirm → returns to plan list, gone
+1. Edit plan → **Delete plan** button → confirm → redirects to list
+2. Plan (and all its goals, tests, reviews) is gone
+3. Plan list refreshes to reflect
 
 ---
 
-## Permissions at Phase 3a
+## Permissions at Phase 3b
 
-| Action | Admin | Director | Coach | Trainer |
-|--------|-------|----------|-------|---------|
-| Access /dashboard/invite | ✓ | ✓ | — | — |
-| Send/revoke invites | ✓ | ✓ | — | — |
-| Access /dashboard/students | ✓ | ✓ | — | — |
-| Enroll/edit/deactivate students | ✓ | ✓ | — | — |
-| Link/unlink parents | ✓ | ✓ | — | — |
-| Link student profile | ✓ | ✓ | — | — |
-| Access /dashboard/practice-plans | ✓ | ✓ | ✓ | — |
-| Create/edit practice plans | ✓ | ✓ | ✓ (own only) | — |
+| Action | Admin | Director | Coach | Trainer | Student | Parent |
+|--------|-------|----------|-------|---------|---------|--------|
+| View goal plans | ✓ | ✓ | — | — | — | — |
+| Create/edit goal plans | ✓ | ✓ | — | — | — | — |
+| Add/edit goals in plan | ✓ | ✓ | — | — | — | — |
+| Attach/detach performance tests | ✓ | ✓ | — | — | — | — |
+| Create/edit reviews | ✓ | ✓ | — | — | — | — |
+| Complete review (lock) | ✓ | ✓ | — | — | — | — |
+| View Performance Management | ✓ | ✓ | — | — | — | — |
 
-Coaches will see the Practice Plans page when their module ships in Phase 4. They can create plans (per spec) — own-only delete via RLS.
+Student/Parent read access to their own plans will be enabled in Phase 6 when their dashboards ship. The RLS policies are already in place — just no UI yet.
 
 ---
 
-## Common gotchas
+## Key design notes
 
-### "No account found" when linking a parent
+### The 1-3 goals rule
+Enforced only in the UI. The DB has no constraint. If you hit the 3-goal limit and want to change one, edit an existing goal to "abandoned" (which removes it from the visible count for planning purposes) or delete one.
 
-The parent must sign up FIRST. Until they have a row in `profiles`, you can't link them. Options:
-- Send them an invite with role `parent` → they sign up → then link
-- Or sign them up directly via Supabase Auth admin
+Actually wait — abandoned goals DO still count toward the 3. If you want more than 3 active goals, delete completed/abandoned ones. The design assumes 1-3 live goals per plan to maintain focus. If this becomes painful, we relax the UI limit.
 
-### Can't link student profile
+### Test trend calculation
+For each attached test + student combination:
+1. The LATEST result (most recent `recorded_at`) is pulled
+2. Compared to the `baseline_value` on the plan link
+3. Direction awareness:
+   - "Higher is better" test: latest > baseline = improving
+   - "Lower is better" test: latest < baseline = improving
+4. Flat is shown when difference is < 0.0001 (effectively equal)
+5. "No data" when no results recorded yet
 
-The target user must have `role = 'student'` AND have signed up at `/sign-up`. Until both are true, the link form errors out.
+### Review completion is one-way
+Once you click "Complete review," the `completed_at` timestamp is set and all fields become readonly. The delete button also disappears. This is intentional — reviews are formal evaluation documents.
 
-### Plan editor — "Save plan" doesn't save my changes
+If you need to "amend" a completed review, create a new ad-hoc review. If you genuinely need to delete a completed one, you'd have to do it in Supabase directly (SQL). We can relax this in the future if it becomes annoying.
 
-The save button submits the WHOLE state (metadata + items). If it fails, an error appears under metadata. Check that you actually clicked Save (the page doesn't auto-save on every change).
-
-### Can I add the same drill twice?
-
-Yes. There's no uniqueness check at the item level — useful for "do this drill, then a skill, then this drill again" sequences.
-
-### "deletePracticePlan" wipes children automatically
-
-The plan_items table has `ON DELETE CASCADE`, so all items auto-delete when the plan is deleted. Same for activities later.
+### Agreement Notes
+Free text, no workflow. The director is documenting they had the discussion. Per the spec decision #4.
 
 ---
 
 ## What to report back
 
-- **"All 3 pages work — invited a user, enrolled a student, built a plan with items"** → Phase 3b begins
-- **"Build error: [paste]"** → we debug
-- **"Works but [X] is wrong"** → feedback before Phase 3b
-- **"Want to change [X]"** → spec adjustment
+- **"All works — plan created, goals added, test attached, review completed"** → Phase 4 (Coach module) begins
+- **"Build error: [paste]"** → debug
+- **"[Section] is broken: [describe]"** → debug
+- **"Works but [X] should change"** → feedback
 
 ---
 
-## Phase 3b preview
+## Phase 4 preview (Coach module)
 
-- **Goal Management** (`/dashboard/goal-management`) — list goal plans across all students; per-plan detail page with sections for goals, performance tests, reviews, and agreement notes
-- **Performance Management** (`/dashboard/performance-management`) — read-only cross-cutting activity log filtered by student/type/date range. Activities are CREATED in Phase 4 (coach) and Phase 5 (trainer); this view consolidates them.
+Next:
+- **Drills** — coaches see it (already present from Phase 2 admin build, just permission-wise)
+- **Practices** — schedule a practice (from plan template or fresh), add students to roster, log attendance, add drills/skills
+- **Activities → games** — log a game with stats grid (goals/assists/+/-/shots/penalties per player, goalie stats)
+- **Students** — read-only directory
 
-Probably similar size to 3a.
+Practices and games are the biggest features. Expect ~15 files. Will likely need a split into 4a + 4b.
+
+After Phase 4 deploys and activities exist, the Performance Management page from this phase starts populating with real data automatically — you'll see the full picture.
