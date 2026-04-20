@@ -14,12 +14,14 @@ type StudentLite = Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'active'
 interface Props {
   plans: PlanRow[];
   students: StudentLite[];
+  seasonId: string | null;
+  seasonArchived: boolean;
   addOnly?: boolean;
 }
 
 const STATUSES: GoalPlanStatus[] = ['draft', 'active', 'completed', 'archived'];
 
-export function GoalManagementClient({ plans, students, addOnly }: Props) {
+export function GoalManagementClient({ plans, students, seasonId, seasonArchived, addOnly }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<GoalPlanStatus | 'all'>('all');
@@ -38,16 +40,20 @@ export function GoalManagementClient({ plans, students, addOnly }: Props) {
       <>
         <button
           onClick={() => setAddOpen(true)}
-          disabled={students.length === 0}
+          disabled={students.length === 0 || seasonArchived || !seasonId}
           className="btn-primary !h-10 !px-4 text-[13px] disabled:opacity-50 disabled:cursor-not-allowed"
-          title={students.length === 0 ? 'Enroll students first' : ''}
+          title={
+            seasonArchived ? 'This season is archived — read-only' :
+            !seasonId ? 'No season selected' :
+            students.length === 0 ? 'Enroll students first' : ''
+          }
         >
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           New plan
         </button>
-        <NewPlanModal open={addOpen} onClose={() => setAddOpen(false)} students={students} />
+        <NewPlanModal open={addOpen} onClose={() => setAddOpen(false)} students={students} seasonId={seasonId} />
       </>
     );
   }
@@ -130,7 +136,7 @@ export function GoalManagementClient({ plans, students, addOnly }: Props) {
         </div>
       )}
 
-      <NewPlanModal open={addOpen} onClose={() => setAddOpen(false)} students={students} />
+      <NewPlanModal open={addOpen} onClose={() => setAddOpen(false)} students={students} seasonId={seasonId} />
     </>
   );
 }
@@ -155,7 +161,7 @@ function formatShort(isoDate: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function NewPlanModal({ open, onClose, students }: { open: boolean; onClose: () => void; students: StudentLite[] }) {
+function NewPlanModal({ open, onClose, students, seasonId }: { open: boolean; onClose: () => void; students: StudentLite[]; seasonId: string | null }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +169,7 @@ function NewPlanModal({ open, onClose, students }: { open: boolean; onClose: () 
   const handleSubmit = async (formData: FormData) => {
     setSaving(true);
     setError(null);
+    if (seasonId) formData.set('season_id', seasonId);
     const res = await createGoalPlan(formData);
     setSaving(false);
     if (res.ok && res.id) {

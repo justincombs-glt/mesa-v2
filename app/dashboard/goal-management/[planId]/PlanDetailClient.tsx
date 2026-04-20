@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   updateGoalPlan, deleteGoalPlan,
   createGoalInPlan, updateGoalInPlan, deleteGoalFromPlan,
-  attachTestToPlan, detachTestFromPlan,
+  attachCompositeToPlan, detachCompositeFromPlan,
   createReview, updateReview, completeReview, deleteReview,
 } from '@/app/actions';
 import { toFormAction } from '@/lib/form-helpers';
@@ -15,31 +15,32 @@ import {
   DOMAIN_LABELS, CATEGORY_LABELS, categoriesForDomain,
 } from '@/lib/goal-taxonomy';
 import type {
-  GoalPlan, GoalPlanGoal, Review, PerformanceTest, GoalTemplate,
-  GoalDomain, GoalCategory, GoalPlanStatus, ReviewType,
+  GoalPlan, GoalPlanGoal, Review, CompositePerformanceTest, GoalTemplate,
+  GoalDomain, GoalCategory, GoalPlanStatus,
 } from '@/lib/supabase/types';
-import type { AttachedTest } from './page';
+import type { AttachedComposite } from './page';
 
 const STATUSES: GoalPlanStatus[] = ['draft', 'active', 'completed', 'archived'];
 
 interface Props {
   plan: GoalPlan;
   goals: GoalPlanGoal[];
-  attachedTests: AttachedTest[];
-  availableTests: PerformanceTest[];
+  attachedComposites: AttachedComposite[];
+  availableComposites: CompositePerformanceTest[];
   reviews: Review[];
   templates: GoalTemplate[];
+  readOnly: boolean;
 }
 
 export function PlanDetailClient(props: Props) {
-  const { plan, goals, attachedTests, availableTests, reviews, templates } = props;
+  const { plan, goals, attachedComposites, availableComposites, reviews, templates, readOnly } = props;
 
   return (
     <div className="flex flex-col gap-10">
-      <PlanMetaSection plan={plan} />
-      <GoalsSection plan={plan} goals={goals} templates={templates} />
-      <TestsSection plan={plan} attachedTests={attachedTests} availableTests={availableTests} />
-      <ReviewsSection plan={plan} reviews={reviews} />
+      <PlanMetaSection plan={plan} readOnly={readOnly} />
+      <GoalsSection plan={plan} goals={goals} templates={templates} readOnly={readOnly} />
+      <CompositesSection plan={plan} attachedComposites={attachedComposites} availableComposites={availableComposites} readOnly={readOnly} />
+      <ReviewsSection plan={plan} reviews={reviews} readOnly={readOnly} />
     </div>
   );
 }
@@ -48,7 +49,7 @@ export function PlanDetailClient(props: Props) {
 // Plan metadata
 // ----------------------------------------------------------------------------
 
-function PlanMetaSection({ plan }: { plan: GoalPlan }) {
+function PlanMetaSection({ plan, readOnly }: { plan: GoalPlan; readOnly: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -69,7 +70,7 @@ function PlanMetaSection({ plan }: { plan: GoalPlan }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete this goal plan? All goals, test links, and reviews will be lost. This cannot be undone.`)) return;
+    if (!confirm('Delete this goal plan? All goals, composites, and reviews will be lost.')) return;
     const fd = new FormData();
     fd.set('id', plan.id);
     await deleteGoalPlan(fd);
@@ -87,9 +88,11 @@ function PlanMetaSection({ plan }: { plan: GoalPlan }) {
             </span>
           )}
         </div>
-        <button onClick={() => setEditing(true)} className="btn-secondary !h-9 text-xs">
-          Edit plan
-        </button>
+        {!readOnly && (
+          <button onClick={() => setEditing(true)} className="btn-secondary !h-9 text-xs">
+            Edit plan
+          </button>
+        )}
       </section>
     );
   }
@@ -142,10 +145,10 @@ function PlanMetaSection({ plan }: { plan: GoalPlan }) {
 }
 
 // ----------------------------------------------------------------------------
-// Goals section (1-3 per plan)
+// Goals section
 // ----------------------------------------------------------------------------
 
-function GoalsSection({ plan, goals, templates }: { plan: GoalPlan; goals: GoalPlanGoal[]; templates: GoalTemplate[] }) {
+function GoalsSection({ plan, goals, templates, readOnly }: { plan: GoalPlan; goals: GoalPlanGoal[]; templates: GoalTemplate[]; readOnly: boolean }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalPlanGoal | null>(null);
 
@@ -154,17 +157,17 @@ function GoalsSection({ plan, goals, templates }: { plan: GoalPlan; goals: GoalP
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="kicker">Goals · {goals.length} of 3</div>
-        </div>
-        <button
-          onClick={() => setAddOpen(true)}
-          disabled={!canAddMore}
-          className="btn-secondary !h-9 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-          title={!canAddMore ? 'Maximum 3 goals per plan' : ''}
-        >
-          + Add goal
-        </button>
+        <div className="kicker">Goals · {goals.length} of 3</div>
+        {!readOnly && (
+          <button
+            onClick={() => setAddOpen(true)}
+            disabled={!canAddMore}
+            className="btn-secondary !h-9 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!canAddMore ? 'Maximum 3 goals per plan' : ''}
+          >
+            + Add goal
+          </button>
+        )}
       </div>
 
       {goals.length === 0 ? (
@@ -176,8 +179,9 @@ function GoalsSection({ plan, goals, templates }: { plan: GoalPlan; goals: GoalP
       ) : (
         <div className="flex flex-col gap-3">
           {goals.map((g) => (
-            <button key={g.id} onClick={() => setEditingGoal(g)}
-              className="card-base p-4 text-left group">
+            <button key={g.id} onClick={() => !readOnly && setEditingGoal(g)}
+              disabled={readOnly}
+              className={`card-base p-4 text-left group ${readOnly ? 'cursor-default' : ''}`}>
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -195,7 +199,7 @@ function GoalsSection({ plan, goals, templates }: { plan: GoalPlan; goals: GoalP
                     )}
                     <GoalStatusPill status={g.status} />
                   </div>
-                  <h3 className="font-serif text-lg text-ink leading-tight group-hover:text-crimson transition-colors">
+                  <h3 className={`font-serif text-lg text-ink leading-tight ${readOnly ? '' : 'group-hover:text-crimson transition-colors'}`}>
                     {g.title}
                   </h3>
                 </div>
@@ -284,7 +288,6 @@ function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
     const res = await createGoalInPlan(fd);
     setSaving(false);
     if (res.ok) {
-      // Reset and close
       setTitle(''); setDescription(''); setCategory(''); setTargetValue(''); setTargetUnit(''); setSelectedTemplateId('');
       onClose();
     } else {
@@ -299,11 +302,9 @@ function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
       <form action={handleSubmit} className="flex flex-col gap-4">
         <FormField label="Start from template" help="Optional. Pre-fills the fields below.">
           <select value={selectedTemplateId} onChange={(e) => handleTemplatePick(e.target.value)} className="input-base">
-            <option value="">— None (build from scratch) —</option>
+            <option value="">&mdash; None (build from scratch) &mdash;</option>
             {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                [{DOMAIN_LABELS[t.domain]}] {t.title}
-              </option>
+              <option key={t.id} value={t.id}>[{DOMAIN_LABELS[t.domain]}] {t.title}</option>
             ))}
           </select>
         </FormField>
@@ -325,7 +326,7 @@ function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
           </FormField>
           <FormField label="Category">
             <select name="category" value={category} onChange={(e) => setCategory(e.target.value)} className="input-base">
-              <option value="">—</option>
+              <option value="">&mdash;</option>
               {categories.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c as GoalCategory]}</option>)}
             </select>
           </FormField>
@@ -443,130 +444,184 @@ function EditGoalModal({ open, onClose, goal, planId }: {
 }
 
 // ----------------------------------------------------------------------------
-// Performance tests section
+// Composite performance tests section (year-over-year table view)
 // ----------------------------------------------------------------------------
 
-function TestsSection({ plan, attachedTests, availableTests }: {
-  plan: GoalPlan; attachedTests: AttachedTest[]; availableTests: PerformanceTest[];
+function CompositesSection({ plan, attachedComposites, availableComposites, readOnly }: {
+  plan: GoalPlan; attachedComposites: AttachedComposite[]; availableComposites: CompositePerformanceTest[]; readOnly: boolean;
 }) {
-  const [addOpen, setAddOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
 
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
-        <div className="kicker">Performance tests · {attachedTests.length}</div>
-        <button onClick={() => setAddOpen(true)} className="btn-secondary !h-9 text-xs"
-          disabled={availableTests.length === 0}
-          title={availableTests.length === 0 ? 'All tests already attached, or none defined' : ''}>
-          + Attach test
-        </button>
+        <div className="kicker">Performance tests · {attachedComposites.length} composite{attachedComposites.length === 1 ? '' : 's'}</div>
+        {!readOnly && (
+          <button onClick={() => setAttachOpen(true)} className="btn-secondary !h-9 text-xs"
+            disabled={availableComposites.length === 0}
+            title={availableComposites.length === 0 ? 'All composites attached, or none defined' : ''}>
+            + Attach composite
+          </button>
+        )}
       </div>
 
-      {attachedTests.length === 0 ? (
+      {attachedComposites.length === 0 ? (
         <div className="card-base p-8 text-center">
           <p className="text-sm text-ink-dim max-w-md mx-auto">
-            No performance tests attached to this plan yet. Attach tests you want to track across the plan period — results will show here as they&apos;re recorded.
+            No composite tests attached to this plan. Attach a composite (like &ldquo;Fall Baseline&rdquo;) to track progress across its sub-tests. Sessions recorded during this season appear as columns against the baseline.
           </p>
         </div>
       ) : (
-        <div className="card-base overflow-hidden">
-          {attachedTests.map((at, idx) => (
-            <TestRow key={at.link.id} attachedTest={at} planId={plan.id} first={idx === 0} />
+        <div className="flex flex-col gap-5">
+          {attachedComposites.map((ac) => (
+            <CompositeTable key={ac.link.id} attached={ac} planId={plan.id} readOnly={readOnly} />
           ))}
         </div>
       )}
 
-      <AttachTestModal open={addOpen} onClose={() => setAddOpen(false)} plan={plan} availableTests={availableTests} />
+      <AttachCompositeModal open={attachOpen} onClose={() => setAttachOpen(false)} plan={plan} availableComposites={availableComposites} />
     </section>
   );
 }
 
-function TestRow({ attachedTest, planId, first }: { attachedTest: AttachedTest; planId: string; first: boolean }) {
-  const { link, test, latest_value, latest_recorded_at } = attachedTest;
+function CompositeTable({ attached, planId, readOnly }: { attached: AttachedComposite; planId: string; readOnly: boolean }) {
+  const { composite, subTests, sessions, baselineSessionId } = attached;
 
-  // Trend computation
-  let trend: 'improving' | 'declining' | 'flat' | 'unknown' = 'unknown';
-  if (latest_value !== null && link.baseline_value !== null) {
-    const diff = latest_value - link.baseline_value;
-    if (Math.abs(diff) < 0.0001) trend = 'flat';
-    else if (test.direction === 'higher_is_better') trend = diff > 0 ? 'improving' : 'declining';
-    else trend = diff < 0 ? 'improving' : 'declining';
+  const baselineSession = sessions.find((s) => s.session.id === baselineSessionId);
+  const nonBaselineSessions = sessions.filter((s) => s.session.id !== baselineSessionId);
+
+  // Compute % change for each non-baseline session × test
+  function computeChange(testId: string, sessionResults: Map<string, number>): { delta: number | null; pctChange: number | null; improving: boolean | null } {
+    if (!baselineSession) return { delta: null, pctChange: null, improving: null };
+    const baseVal = baselineSession.results.get(testId);
+    const curVal = sessionResults.get(testId);
+    if (baseVal === undefined || curVal === undefined) return { delta: null, pctChange: null, improving: null };
+    const delta = curVal - baseVal;
+    const pctChange = baseVal !== 0 ? (delta / baseVal) * 100 : null;
+    const test = subTests.find((st) => st.test.id === testId)?.test;
+    if (!test) return { delta, pctChange, improving: null };
+    const improving = test.direction === 'higher_is_better' ? delta > 0 : delta < 0;
+    return { delta, pctChange, improving: delta === 0 ? null : improving };
   }
 
-  const trendStyle = trend === 'improving'
-    ? 'text-sage-dark'
-    : trend === 'declining'
-    ? 'text-crimson'
-    : 'text-ink-faint';
-
-  const trendIcon = trend === 'improving' ? '↑' : trend === 'declining' ? '↓' : trend === 'flat' ? '=' : '—';
-
   return (
-    <div className={`flex items-center gap-4 px-5 py-3.5 ${first ? '' : 'border-t border-ink-hair'}`}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <span className={`text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded ${
-            test.domain === 'on_ice' ? 'bg-ink text-paper' : 'bg-sage/10 text-sage-dark border border-sage/30'
-          }`}>
-            {DOMAIN_LABELS[test.domain]}
-          </span>
-          <span className="font-medium text-ink">{test.title}</span>
+    <div className="card-base overflow-hidden">
+      <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ink-hair bg-sand-50">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-serif text-lg text-ink">{composite.title}</h3>
+          {composite.description && <p className="text-xs text-ink-dim mt-1">{composite.description}</p>}
         </div>
-        <div className="text-[11px] text-ink-faint">
-          {test.unit} · {test.direction === 'higher_is_better' ? '↑ higher better' : '↓ lower better'}
-        </div>
+        {!readOnly && (
+          <form action={toFormAction(detachCompositeFromPlan)}>
+            <input type="hidden" name="id" value={attached.link.id} />
+            <input type="hidden" name="plan_id" value={planId} />
+            <button type="submit" className="text-[10px] text-ink-faint hover:text-crimson font-mono uppercase tracking-wider flex-shrink-0">
+              Detach
+            </button>
+          </form>
+        )}
       </div>
 
-      <div className="flex items-center gap-6 flex-shrink-0">
-        <div className="text-right">
-          <div className="font-mono text-xs text-ink">
-            {link.baseline_value !== null ? `${link.baseline_value}` : '—'}
-          </div>
-          <div className="kicker text-[9px] mt-0.5">Baseline</div>
+      {sessions.length === 0 ? (
+        <div className="p-6 text-center text-sm text-ink-dim italic">
+          No sessions recorded yet. Results will appear as the trainer administers this composite for {/* student */ 'the student'}.
         </div>
-        <div className="text-right">
-          <div className="font-mono text-xs text-ink">
-            {latest_value !== null ? latest_value : '—'}
-          </div>
-          <div className="kicker text-[9px] mt-0.5">Latest</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint">
+                <th className="text-left px-5 py-3 font-medium">Test</th>
+                <th className="text-left px-3 py-3 font-medium">Unit</th>
+                {baselineSession && (
+                  <th className="text-right px-3 py-3 font-medium bg-sage/5 border-l border-ink-hair">
+                    <div>Baseline</div>
+                    <div className="text-ink-mist text-[9px] normal-case mt-0.5">{formatDate(baselineSession.session.session_date)}</div>
+                  </th>
+                )}
+                {nonBaselineSessions.map((sv) => (
+                  <th key={sv.session.id} className="text-right px-3 py-3 font-medium border-l border-ink-hair">
+                    <div>{formatShortDate(sv.session.session_date)}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {subTests.sort((a, b) => a.sequence - b.sequence).map((st) => (
+                <tr key={st.test.id} className="border-t border-ink-hair">
+                  <td className="px-5 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[8px] font-mono tracking-[0.15em] uppercase px-1 py-0.5 rounded ${
+                        st.test.domain === 'on_ice' ? 'bg-ink text-paper' : 'bg-sage/10 text-sage-dark border border-sage/30'
+                      }`}>
+                        {DOMAIN_LABELS[st.test.domain]}
+                      </span>
+                      <span className="text-ink font-medium">{st.test.title}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-ink-faint text-xs">
+                    {st.test.unit}
+                    <div className="text-[9px] opacity-75 mt-0.5">
+                      {st.test.direction === 'higher_is_better' ? '↑ better' : '↓ better'}
+                    </div>
+                  </td>
+                  {baselineSession && (
+                    <td className="px-3 py-2.5 text-right font-mono text-ink bg-sage/5 border-l border-ink-hair">
+                      {baselineSession.results.get(st.test.id) ?? <span className="text-ink-faint">&mdash;</span>}
+                    </td>
+                  )}
+                  {nonBaselineSessions.map((sv) => {
+                    const value = sv.results.get(st.test.id);
+                    const change = computeChange(st.test.id, sv.results);
+                    return (
+                      <td key={sv.session.id} className="px-3 py-2.5 text-right font-mono border-l border-ink-hair">
+                        {value !== undefined ? (
+                          <>
+                            <div className="text-ink">{value}</div>
+                            {change.pctChange !== null && (
+                              <div className={`text-[10px] mt-0.5 ${
+                                change.improving === true ? 'text-sage-dark' :
+                                change.improving === false ? 'text-crimson' :
+                                'text-ink-faint'
+                              }`}>
+                                {change.improving === true ? '↑' : change.improving === false ? '↓' : '='} {Math.abs(change.pctChange).toFixed(1)}%
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-ink-faint">&mdash;</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="text-right">
-          <div className={`font-mono text-xs font-medium ${trendStyle}`}>
-            {trendIcon} {trend === 'unknown' ? 'no data' : trend}
-          </div>
-          {latest_recorded_at && (
-            <div className="kicker text-[9px] mt-0.5">{formatDate(latest_recorded_at.slice(0, 10))}</div>
-          )}
-        </div>
-        <form action={toFormAction(detachTestFromPlan)}>
-          <input type="hidden" name="id" value={link.id} />
-          <input type="hidden" name="plan_id" value={planId} />
-          <button type="submit" className="text-[10px] text-ink-faint hover:text-crimson font-mono uppercase tracking-wider">
-            Detach
-          </button>
-        </form>
-      </div>
+      )}
     </div>
   );
 }
 
-function AttachTestModal({ open, onClose, plan, availableTests }: {
-  open: boolean; onClose: () => void; plan: GoalPlan; availableTests: PerformanceTest[];
+function AttachCompositeModal({ open, onClose, plan, availableComposites }: {
+  open: boolean; onClose: () => void; plan: GoalPlan; availableComposites: CompositePerformanceTest[];
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTestId, setSelectedTestId] = useState('');
+  const [selectedId, setSelectedId] = useState('');
 
-  const selectedTest = availableTests.find((t) => t.id === selectedTestId);
-
-  const handleSubmit = async (fd: FormData) => {
-    fd.set('plan_id', plan.id);
+  const handleSubmit = async () => {
+    if (!selectedId) return;
     setSaving(true);
     setError(null);
-    const res = await attachTestToPlan(fd);
+    const fd = new FormData();
+    fd.set('plan_id', plan.id);
+    fd.set('composite_id', selectedId);
+    const res = await attachCompositeToPlan(fd);
     setSaving(false);
     if (res.ok) {
-      setSelectedTestId('');
+      setSelectedId('');
       onClose();
     } else {
       setError(res.error ?? 'Failed.');
@@ -574,54 +629,30 @@ function AttachTestModal({ open, onClose, plan, availableTests }: {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Attach a performance test" description="Track this test's results throughout the plan period.">
-      <form action={handleSubmit} className="flex flex-col gap-4">
-        <FormField label="Test" required>
-          <select name="test_id" value={selectedTestId} onChange={(e) => setSelectedTestId(e.target.value)} required className="input-base">
-            <option value="" disabled>Choose a test&hellip;</option>
-            <optgroup label="On-Ice">
-              {availableTests.filter((t) => t.domain === 'on_ice').map((t) => (
-                <option key={t.id} value={t.id}>{t.title}{t.unit ? ` (${t.unit})` : ''}</option>
-              ))}
-            </optgroup>
-            <optgroup label="Off-Ice">
-              {availableTests.filter((t) => t.domain === 'off_ice').map((t) => (
-                <option key={t.id} value={t.id}>{t.title}{t.unit ? ` (${t.unit})` : ''}</option>
-              ))}
-            </optgroup>
+    <Modal open={open} onClose={onClose} title="Attach a composite" description="Pick a composite performance test to track on this plan.">
+      <div className="flex flex-col gap-4">
+        <FormField label="Composite" required>
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} required className="input-base">
+            <option value="" disabled>Choose a composite&hellip;</option>
+            {availableComposites.map((c) => (
+              <option key={c.id} value={c.id}>{c.title}</option>
+            ))}
           </select>
         </FormField>
 
-        {selectedTest && (
-          <div className="bg-sand-50 border border-sand-100 rounded-xl p-4 text-xs text-ink-dim">
-            {selectedTest.description && <p className="mb-1">{selectedTest.description}</p>}
-            <p>
-              Unit: <span className="text-ink font-mono">{selectedTest.unit}</span> · Direction: <span className="text-ink">{selectedTest.direction === 'higher_is_better' ? 'higher is better' : 'lower is better'}</span>
-            </p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="Baseline value" help="Starting point">
-            <input type="number" step="any" name="baseline_value" className="input-base" />
-          </FormField>
-          <FormField label="Target value" help="Goal">
-            <input type="number" step="any" name="target_value" className="input-base" />
-          </FormField>
-          <FormField label="Unit" help="Override">
-            <input type="text" name="target_unit" defaultValue={selectedTest?.unit ?? ''} className="input-base" />
-          </FormField>
+        <div className="text-xs text-ink-faint italic">
+          Sessions of this composite recorded during the current season will appear as columns. The earliest session is the baseline by default; you can later mark another as baseline explicitly.
         </div>
 
         {error && <div className="text-sm text-crimson">{error}</div>}
 
         <div className="flex justify-end gap-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving || !selectedTestId} className="btn-primary !h-10 text-[13px]">
-            {saving ? 'Attaching\u2026' : 'Attach test'}
+          <button type="button" onClick={handleSubmit} disabled={saving || !selectedId} className="btn-primary !h-10 text-[13px]">
+            {saving ? 'Attaching\u2026' : 'Attach composite'}
           </button>
         </div>
-      </form>
+      </div>
     </Modal>
   );
 }
@@ -630,7 +661,7 @@ function AttachTestModal({ open, onClose, plan, availableTests }: {
 // Reviews section
 // ----------------------------------------------------------------------------
 
-function ReviewsSection({ plan, reviews }: { plan: GoalPlan; reviews: Review[] }) {
+function ReviewsSection({ plan, reviews, readOnly }: { plan: GoalPlan; reviews: Review[]; readOnly: boolean }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editingReview, setEditingReview] = useState<Review | null>(null);
 
@@ -638,9 +669,11 @@ function ReviewsSection({ plan, reviews }: { plan: GoalPlan; reviews: Review[] }
     <section>
       <div className="flex items-center justify-between mb-4">
         <div className="kicker">Reviews · {reviews.length}</div>
-        <button onClick={() => setAddOpen(true)} className="btn-secondary !h-9 text-xs">
-          + New review
-        </button>
+        {!readOnly && (
+          <button onClick={() => setAddOpen(true)} className="btn-secondary !h-9 text-xs">
+            + New review
+          </button>
+        )}
       </div>
 
       {reviews.length === 0 ? (
@@ -665,13 +698,9 @@ function ReviewsSection({ plan, reviews }: { plan: GoalPlan; reviews: Review[] }
                     Review {r.scheduled_date ? formatDate(r.scheduled_date) : formatDate(r.created_at.slice(0, 10))}
                   </span>
                   {r.completed_at ? (
-                    <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-sage text-paper">
-                      Completed
-                    </span>
+                    <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-sage text-paper">Completed</span>
                   ) : (
-                    <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-crimson/10 text-crimson border border-crimson/20">
-                      Draft
-                    </span>
+                    <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-crimson/10 text-crimson border border-crimson/20">Draft</span>
                   )}
                 </div>
                 {r.summary && <div className="text-xs text-ink-dim line-clamp-1">{r.summary}</div>}
@@ -682,7 +711,7 @@ function ReviewsSection({ plan, reviews }: { plan: GoalPlan; reviews: Review[] }
       )}
 
       <NewReviewModal open={addOpen} onClose={() => setAddOpen(false)} plan={plan} />
-      <EditReviewModal open={editingReview !== null} onClose={() => setEditingReview(null)} review={editingReview} planId={plan.id} />
+      <EditReviewModal open={editingReview !== null} onClose={() => setEditingReview(null)} review={editingReview} planId={plan.id} readOnly={readOnly} />
     </section>
   );
 }
@@ -702,7 +731,7 @@ function NewReviewModal({ open, onClose, plan }: { open: boolean; onClose: () =>
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New review" description="Start a review for this plan. You'll write the content and complete it from the review itself.">
+    <Modal open={open} onClose={onClose} title="New review" description="Start a review for this plan.">
       <form action={handleSubmit} className="flex flex-col gap-4">
         <FormField label="Review type" required>
           <select name="review_type" defaultValue="scheduled" required className="input-base">
@@ -711,7 +740,7 @@ function NewReviewModal({ open, onClose, plan }: { open: boolean; onClose: () =>
           </select>
         </FormField>
 
-        <FormField label="Scheduled date" help="For scheduled reviews. Leave blank for ad-hoc.">
+        <FormField label="Scheduled date">
           <input type="date" name="scheduled_date" className="input-base" />
         </FormField>
 
@@ -728,8 +757,8 @@ function NewReviewModal({ open, onClose, plan }: { open: boolean; onClose: () =>
   );
 }
 
-function EditReviewModal({ open, onClose, review, planId }: {
-  open: boolean; onClose: () => void; review: Review | null; planId: string;
+function EditReviewModal({ open, onClose, review, planId, readOnly }: {
+  open: boolean; onClose: () => void; review: Review | null; planId: string; readOnly: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -737,6 +766,7 @@ function EditReviewModal({ open, onClose, review, planId }: {
   if (!review) return null;
 
   const isCompleted = review.completed_at !== null;
+  const trulyReadOnly = isCompleted || readOnly;
 
   const handleSubmit = async (fd: FormData) => {
     fd.set('id', review.id);
@@ -750,7 +780,7 @@ function EditReviewModal({ open, onClose, review, planId }: {
   };
 
   const handleComplete = async () => {
-    if (!confirm('Complete this review? Once completed, it locks and can\'t be edited.')) return;
+    if (!confirm('Complete this review? Once completed, it locks.')) return;
     const fd = new FormData();
     fd.set('id', review.id);
     fd.set('plan_id', planId);
@@ -759,7 +789,7 @@ function EditReviewModal({ open, onClose, review, planId }: {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Delete this review? This cannot be undone.')) return;
+    if (!confirm('Delete this review?')) return;
     const fd = new FormData();
     fd.set('id', review.id);
     fd.set('plan_id', planId);
@@ -774,25 +804,25 @@ function EditReviewModal({ open, onClose, review, planId }: {
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="600px">
       <form action={handleSubmit} className="flex flex-col gap-4">
-        {!isCompleted && (
+        {!trulyReadOnly && (
           <FormField label="Scheduled date">
             <input type="date" name="scheduled_date" defaultValue={review.scheduled_date ?? ''} className="input-base" />
           </FormField>
         )}
 
-        <FormField label="Summary" help={isCompleted ? '' : "Overall review notes. What's the state of this plan?"}>
-          <textarea name="summary" defaultValue={review.summary ?? ''} rows={4} readOnly={isCompleted}
-            className={`input-base resize-none ${isCompleted ? 'opacity-70 cursor-default' : ''}`} />
+        <FormField label="Summary">
+          <textarea name="summary" defaultValue={review.summary ?? ''} rows={4} readOnly={trulyReadOnly}
+            className={`input-base resize-none ${trulyReadOnly ? 'opacity-70 cursor-default' : ''}`} />
         </FormField>
 
-        <FormField label="Concerns" help={isCompleted ? '' : 'What should the student / family / coach address?'}>
-          <textarea name="concerns" defaultValue={review.concerns ?? ''} rows={3} readOnly={isCompleted}
-            className={`input-base resize-none ${isCompleted ? 'opacity-70 cursor-default' : ''}`} />
+        <FormField label="Concerns">
+          <textarea name="concerns" defaultValue={review.concerns ?? ''} rows={3} readOnly={trulyReadOnly}
+            className={`input-base resize-none ${trulyReadOnly ? 'opacity-70 cursor-default' : ''}`} />
         </FormField>
 
-        <FormField label="Next steps" help={isCompleted ? '' : 'Concrete actions from this review.'}>
-          <textarea name="next_steps" defaultValue={review.next_steps ?? ''} rows={3} readOnly={isCompleted}
-            className={`input-base resize-none ${isCompleted ? 'opacity-70 cursor-default' : ''}`} />
+        <FormField label="Next steps">
+          <textarea name="next_steps" defaultValue={review.next_steps ?? ''} rows={3} readOnly={trulyReadOnly}
+            className={`input-base resize-none ${trulyReadOnly ? 'opacity-70 cursor-default' : ''}`} />
         </FormField>
 
         {isCompleted && (
@@ -804,14 +834,16 @@ function EditReviewModal({ open, onClose, review, planId }: {
         {error && <div className="text-sm text-crimson">{error}</div>}
 
         <div className="flex justify-between items-center pt-4 border-t border-ink-hair">
-          <button type="button" onClick={handleDelete} className="text-xs text-crimson hover:text-crimson-dark font-mono uppercase tracking-wider">
-            Delete
-          </button>
-          <div className="flex gap-2">
-            <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">
-              {isCompleted ? 'Close' : 'Cancel'}
+          {!trulyReadOnly && (
+            <button type="button" onClick={handleDelete} className="text-xs text-crimson hover:text-crimson-dark font-mono uppercase tracking-wider">
+              Delete
             </button>
-            {!isCompleted && (
+          )}
+          <div className="flex gap-2 ml-auto">
+            <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">
+              {trulyReadOnly ? 'Close' : 'Cancel'}
+            </button>
+            {!trulyReadOnly && (
               <>
                 <button type="submit" disabled={saving} className="btn-secondary !h-10 text-[13px]">
                   {saving ? 'Saving\u2026' : 'Save draft'}
@@ -850,4 +882,9 @@ function StatusPill({ status }: { status: GoalPlanStatus }) {
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }

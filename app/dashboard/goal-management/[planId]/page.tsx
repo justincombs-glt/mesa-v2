@@ -2,25 +2,36 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PlanDetailClient } from './PlanDetailClient';
 import type {
-  GoalPlan, GoalPlanGoal, GoalPlanTest,
+  GoalPlan, GoalPlanGoal, GoalPlanComposite,
   Student, Review, PerformanceTest, GoalTemplate,
+  CompositePerformanceTest, CompositePerformanceTestItem,
+  CPTSession, PerformanceTestResult,
 } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
 
-export interface AttachedTest {
-  link: GoalPlanTest;
-  test: PerformanceTest;
-  latest_value: number | null;
-  latest_recorded_at: string | null;
+export interface AttachedComposite {
+  link: GoalPlanComposite;
+  composite: CompositePerformanceTest;
+  subTests: Array<{
+    test: PerformanceTest;
+    sequence: number;
+  }>;
+  sessions: Array<{
+    session: CPTSession;
+    results: Map<string, number>; // test_id -> value
+  }>;
+  baselineSessionId: string | null;
 }
 
 export default async function PlanDetailPage({ params }: { params: { planId: string } }) {
   await requireRole('admin', 'director');
   const supabase = createClient();
+  const seasonCtx = await getSeasonContext();
 
   const { data: planRow } = await supabase.from('goal_plans').select('*').eq('id', params.planId).single();
   if (!planRow) notFound();
@@ -38,55 +49,95 @@ export default async function PlanDetailPage({ params }: { params: { planId: str
     .from('goal_plan_goals').select('*').eq('plan_id', plan.id).order('sequence');
   const goals = (goalRows ?? []) as GoalPlanGoal[];
 
-  // Attached tests + latest result per student×test
-  const { data: testLinkRows } = await supabase
-    .from('goal_plan_tests').select('*').eq('plan_id', plan.id);
-  const testLinks = (testLinkRows ?? []) as GoalPlanTest[];
+  // Attached composite tests
+  const { data: compLinkRows } = await supabase
+    .from('goal_plan_composites').select('*').eq('plan_id', plan.id);
+  const compLinks = (compLinkRows ?? []) as GoalPlanComposite[];
 
-  let attachedTests: AttachedTest[] = [];
-  if (testLinks.length > 0) {
-    const testIds = testLinks.map((l) => l.test_id);
-    const { data: testRows } = await supabase
-      .from('performance_tests').select('*').in('id', testIds);
+  let attachedComposites: AttachedComposite[] = [];
+  if (compLinks.length > 0) {
+    const compIds = compLinks.map((l) => l.composite_id);
+
+    const [{ data: compRows }, { data: compItemRows }] = await Promise.all([
+      supabase.from('composite_performance_tests').select('*').in('id', compIds),
+      supabase.from('composite_performance_test_items').select('*').in('composite_id', compIds).order('sequence'),
+    ]);
+    const composites = (compRows ?? []) as CompositePerformanceTest[];
+    const compItems = (compItemRows ?? []) as CompositePerformanceTestItem[];
+
+    // Get all individual tests involved
+    const testIds = [...new Set(compItems.map((i) => i.test_id))];
+    const { data: testRows } = testIds.length > 0
+      ? await supabase.from('performance_tests').select('*').in('id', testIds)
+      : { data: [] };
     const testMap = new Map(((testRows ?? []) as PerformanceTest[]).map((t) => [t.id, t]));
 
-    // Most recent result per test for this student
-    const { data: resultRows } = await supabase
-      .from('performance_test_results')
-      .select('test_id, value, recorded_at')
-      .eq('student_id', plan.student_id)
-      .in('test_id', testIds)
-      .order('recorded_at', { ascending: false });
-    const results = (resultRows ?? []) as Array<{ test_id: string; value: number; recorded_at: string }>;
+    // Get sessions for these composites (scoped to current season + this student)
+    const seasonId = seasonCtx.selected?.id;
+    let sessionQuery = supabase
+      .from('cpt_sessions').select('*').in('composite_id', compIds).order('session_date');
+    if (seasonId) {
+      sessionQuery = sessionQuery.eq('season_id', seasonId);
+    }
+    const { data: sessionRows } = await sessionQuery;
+    const sessions = (sessionRows ?? []) as CPTSession[];
 
-    const latestMap = new Map<string, { value: number; recorded_at: string }>();
-    results.forEach((r) => {
-      if (!latestMap.has(r.test_id)) {
-        latestMap.set(r.test_id, { value: r.value, recorded_at: r.recorded_at });
+    // Get results for these sessions and this student
+    let results: PerformanceTestResult[] = [];
+    if (sessions.length > 0) {
+      const sessionIds = sessions.map((s) => s.id);
+      const { data: resultRows } = await supabase
+        .from('performance_test_results').select('*')
+        .in('cpt_session_id', sessionIds)
+        .eq('student_id', plan.student_id);
+      results = (resultRows ?? []) as PerformanceTestResult[];
+    }
+
+    // Assemble per-composite view
+    attachedComposites = compLinks.map((link) => {
+      const comp = composites.find((c) => c.id === link.composite_id);
+      const items = compItems.filter((i) => i.composite_id === link.composite_id);
+      const subTests = items
+        .map((i) => ({ test: testMap.get(i.test_id), sequence: i.sequence }))
+        .filter((x): x is { test: PerformanceTest; sequence: number } => !!x.test);
+      const compSessions = sessions.filter((s) => s.composite_id === link.composite_id);
+
+      // Build results map per session
+      const sessionViews = compSessions.map((s) => {
+        const resultsMap = new Map<string, number>();
+        results.filter((r) => r.cpt_session_id === s.id).forEach((r) => {
+          resultsMap.set(r.test_id, r.value);
+        });
+        return { session: s, results: resultsMap };
+      });
+
+      // Baseline: explicitly-flagged session, else earliest session
+      let baselineSessionId: string | null = null;
+      const flagged = compSessions.find((s) => s.is_baseline);
+      if (flagged) {
+        baselineSessionId = flagged.id;
+      } else if (compSessions.length > 0) {
+        baselineSessionId = compSessions[0].id;
       }
-    });
 
-    attachedTests = testLinks.map((link) => {
-      const test = testMap.get(link.test_id);
-      const latest = latestMap.get(link.test_id);
       return {
         link,
-        test: test ?? {
-          id: link.test_id, title: '(deleted test)', domain: 'off_ice',
-          description: null, instructions: null, unit: null,
-          direction: 'higher_is_better', active: false, created_by: null, created_at: '',
+        composite: comp ?? {
+          id: link.composite_id, title: '(deleted composite)',
+          description: null, active: false, created_by: null, created_at: '',
         },
-        latest_value: latest?.value ?? null,
-        latest_recorded_at: latest?.recorded_at ?? null,
+        subTests,
+        sessions: sessionViews,
+        baselineSessionId,
       };
     });
   }
 
-  // Available tests for attaching
-  const attachedTestIds = new Set(testLinks.map((l) => l.test_id));
-  const { data: allTestsRows } = await supabase
-    .from('performance_tests').select('*').eq('active', true).order('title');
-  const availableTests = ((allTestsRows ?? []) as PerformanceTest[]).filter((t) => !attachedTestIds.has(t.id));
+  // Available composites for attaching
+  const attachedCompIds = new Set(compLinks.map((l) => l.composite_id));
+  const { data: allCompRows } = await supabase
+    .from('composite_performance_tests').select('*').eq('active', true).order('title');
+  const availableComposites = ((allCompRows ?? []) as CompositePerformanceTest[]).filter((c) => !attachedCompIds.has(c.id));
 
   // Reviews
   const { data: reviewRows } = await supabase
@@ -121,10 +172,11 @@ export default async function PlanDetailPage({ params }: { params: { planId: str
       <PlanDetailClient
         plan={plan}
         goals={goals}
-        attachedTests={attachedTests}
-        availableTests={availableTests}
+        attachedComposites={attachedComposites}
+        availableComposites={availableComposites}
         reviews={reviews}
         templates={templates}
+        readOnly={seasonCtx.isArchived}
       />
     </>
   );

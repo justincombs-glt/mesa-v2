@@ -17,6 +17,34 @@ export interface Academy {
   created_at: string;
 }
 
+export interface Season {
+  id: string;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  is_current: boolean;
+  archived_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface SeasonEnrollment {
+  id: string;
+  season_id: string;
+  student_id: string;
+  enrolled_on: string;
+  departed_on: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface GoalPlanComposite {
+  id: string;
+  plan_id: string;
+  composite_id: string;
+  created_at: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -143,6 +171,8 @@ export interface CPTSession {
   session_date: string;
   administered_by: string | null;
   conditions_notes: string | null;
+  is_baseline: boolean;
+  season_id: string | null;
   created_at: string;
 }
 
@@ -210,6 +240,7 @@ export interface Activity {
   custom_category_name: string | null;
   source_practice_plan_id: string | null;
   source_workout_plan_id: string | null;
+  season_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -283,6 +314,7 @@ export interface PerformanceTestResult {
   is_baseline: boolean;
   context: string | null;
   cpt_session_id: string | null;
+  season_id: string | null;
 }
 
 export interface GoalPlan {
@@ -293,6 +325,7 @@ export interface GoalPlan {
   agreement_notes: string | null;
   starts_on: string | null;
   ends_on: string | null;
+  season_id: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

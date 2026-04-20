@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import type { AppRole } from '@/lib/supabase/types';
+import type { AppRole, Season } from '@/lib/supabase/types';
 import { SignOutButton } from './SignOutButton';
+import { SeasonSelector } from './SeasonSelector';
 
 interface AppShellProps {
   role: AppRole;
@@ -9,6 +10,9 @@ interface AppShellProps {
   displayName: string;
   children: ReactNode;
   currentPath?: string;
+  selectedSeason?: Season | null;
+  allSeasons?: Season[];
+  isArchivedView?: boolean;
 }
 
 interface NavLink {
@@ -47,6 +51,7 @@ function navForRole(role: AppRole): NavLink[] {
         { href: '/dashboard/goal-templates', label: 'Goal Templates', icon: icons.goals },
         { href: '/dashboard/performance-tests', label: 'Performance Tests', icon: icons.tests },
         { href: '/dashboard/composite-performance-tests', label: 'Composite Tests', icon: icons.performance },
+        { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
         settings,
       ];
     case 'director':
@@ -57,6 +62,7 @@ function navForRole(role: AppRole): NavLink[] {
         { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
         { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
         { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
+        { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
         settings,
       ];
     case 'coach':
@@ -92,7 +98,7 @@ function navForRole(role: AppRole): NavLink[] {
   }
 }
 
-export function AppShell({ role, email, displayName, children, currentPath }: AppShellProps) {
+export function AppShell({ role, email, displayName, children, currentPath, selectedSeason, allSeasons, isArchivedView }: AppShellProps) {
   const nav = navForRole(role);
 
   return (
@@ -113,6 +119,17 @@ export function AppShell({ role, email, displayName, children, currentPath }: Ap
             </div>
           </Link>
         </div>
+
+        {/* Season selector (sidebar) */}
+        {selectedSeason && allSeasons && allSeasons.length > 0 && (
+          <div className="hidden md:block px-4 pt-3 pb-1">
+            <div className="kicker mb-1.5">Season</div>
+            <SeasonSelector
+              selected={selectedSeason}
+              allSeasons={allSeasons}
+            />
+          </div>
+        )}
 
         {/* Nav items */}
         <nav className="hidden md:flex md:flex-col gap-0.5 px-3 py-4 flex-1">
@@ -180,6 +197,23 @@ export function AppShell({ role, email, displayName, children, currentPath }: Ap
 
       {/* Main content */}
       <main className="flex-1 min-w-0">
+        {isArchivedView && selectedSeason && (
+          <div className="bg-sand-100 border-b border-sand-200 px-5 md:px-10 py-3">
+            <div className="max-w-[1200px] mx-auto flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm">
+                <svg className="w-4 h-4 text-ink-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/>
+                </svg>
+                <span className="text-ink">
+                  Viewing <strong>{selectedSeason.name}</strong> &mdash; archived. Read-only mode.
+                </span>
+              </div>
+              <span className="text-xs text-ink-faint ml-auto">
+                Switch to the current season from the selector in the sidebar to make changes.
+              </span>
+            </div>
+          </div>
+        )}
         <div className="max-w-[1200px] mx-auto px-5 md:px-10 py-8 md:py-12">
           {children}
         </div>

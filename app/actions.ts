@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import type { AppRole, GoalDomain, GoalCategory } from '@/lib/supabase/types';
 
@@ -722,12 +723,13 @@ export async function createGoalPlan(formData: FormData) {
   const starts_on = String(formData.get('starts_on') ?? '').trim() || null;
   const ends_on = String(formData.get('ends_on') ?? '').trim() || null;
   const agreement_notes = String(formData.get('agreement_notes') ?? '').trim() || null;
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
 
   if (!student_id) return { ok: false, error: 'Student is required.' };
   if (!title) return { ok: false, error: 'Plan title is required.' };
 
   const { data, error } = await (supabase.from('goal_plans') as Any)
-    .insert({ student_id, title, starts_on, ends_on, agreement_notes, status: 'draft', created_by: user.id })
+    .insert({ student_id, title, starts_on, ends_on, agreement_notes, season_id, status: 'draft', created_by: user.id })
     .select('id').single();
 
   if (error) return { ok: false, error: error.message };
@@ -929,6 +931,188 @@ export async function deleteReview(formData: FormData) {
   const id = String(formData.get('id') ?? '');
   const plan_id = String(formData.get('plan_id') ?? '');
   const { error } = await (supabase.from('reviews') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+// ============================================================================
+// Seasons (admin + director)
+// ============================================================================
+
+export async function createSeason(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const name = String(formData.get('name') ?? '').trim();
+  const starts_on = String(formData.get('starts_on') ?? '').trim();
+  const ends_on = String(formData.get('ends_on') ?? '').trim();
+
+  if (!name) return { ok: false, error: 'Season name is required.' };
+  if (!starts_on || !ends_on) return { ok: false, error: 'Start and end dates are required.' };
+
+  const { data, error } = await (supabase.from('seasons') as Any)
+    .insert({ name, starts_on, ends_on, is_current: false, created_by: user.id })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/seasons');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function activateSeason(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  // Check season is not archived
+  const { data: seasonRow } = await supabase.from('seasons').select('archived_at').eq('id', id).single();
+  if (!seasonRow) return { ok: false, error: 'Season not found' };
+  if ((seasonRow as { archived_at: string | null }).archived_at) {
+    return { ok: false, error: 'Cannot activate an archived season.' };
+  }
+
+  // Unset any existing current season, then set this one
+  // unique index on is_current=true means we have to unset first
+  const { error: e1 } = await (supabase.from('seasons') as Any)
+    .update({ is_current: false }).eq('is_current', true);
+  if (e1) return { ok: false, error: e1.message };
+
+  const { error: e2 } = await (supabase.from('seasons') as Any)
+    .update({ is_current: true }).eq('id', id);
+  if (e2) return { ok: false, error: e2.message };
+
+  revalidatePath('/dashboard/seasons');
+  revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+export async function archiveSeason(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  // Block if there are any draft/active goal plans in this season
+  const { data: drafts } = await supabase
+    .from('goal_plans').select('id').eq('season_id', id).in('status', ['draft', 'active']);
+  if (drafts && drafts.length > 0) {
+    return {
+      ok: false,
+      error: `Cannot archive: ${drafts.length} goal plan${drafts.length === 1 ? '' : 's'} still draft or active. Complete or archive each plan first.`,
+    };
+  }
+
+  // Block if any reviews not completed
+  const { data: reviews } = await supabase
+    .from('reviews').select('id, plan_id').is('completed_at', null);
+  let blockingReviews = 0;
+  if (reviews && reviews.length > 0) {
+    const planIds = (reviews as Array<{ plan_id: string }>).map((r) => r.plan_id);
+    const { data: planRows } = await supabase
+      .from('goal_plans').select('id').eq('season_id', id).in('id', planIds);
+    blockingReviews = planRows?.length ?? 0;
+  }
+  if (blockingReviews > 0) {
+    return {
+      ok: false,
+      error: `Cannot archive: ${blockingReviews} review${blockingReviews === 1 ? '' : 's'} not completed. Complete or delete draft reviews first.`,
+    };
+  }
+
+  const { error } = await (supabase.from('seasons') as Any)
+    .update({ archived_at: new Date().toISOString(), is_current: false }).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/seasons');
+  revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+export async function deleteSeason(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  // Block if season has any plans/activities/results
+  const { data: planCount } = await supabase.from('goal_plans').select('id').eq('season_id', id).limit(1);
+  const { data: actCount } = await supabase.from('activities').select('id').eq('season_id', id).limit(1);
+  if ((planCount && planCount.length > 0) || (actCount && actCount.length > 0)) {
+    return { ok: false, error: 'Cannot delete a season that has plans or activities. Archive it instead.' };
+  }
+
+  const { error } = await (supabase.from('seasons') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/seasons');
+  return { ok: true };
+}
+
+export async function selectSeason(formData: FormData) {
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+  cookies().set('mesa_selected_season', id, {
+    httpOnly: true, sameSite: 'lax', path: '/',
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  });
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+// ============================================================================
+// Season enrollments (admin + director)
+// ============================================================================
+
+export async function enrollStudentInSeason(formData: FormData) {
+  const supabase = createClient();
+  const season_id = String(formData.get('season_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!season_id || !student_id) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('season_enrollments') as Any)
+    .insert({ season_id, student_id });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/students');
+  revalidatePath('/dashboard/seasons');
+  return { ok: true };
+}
+
+export async function departStudentFromSeason(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const { error } = await (supabase.from('season_enrollments') as Any)
+    .update({ departed_on: new Date().toISOString().slice(0, 10) }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/students');
+  return { ok: true };
+}
+
+// ============================================================================
+// Goal plan composites (replaces individual test attachment)
+// ============================================================================
+
+export async function attachCompositeToPlan(formData: FormData) {
+  const supabase = createClient();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const composite_id = String(formData.get('composite_id') ?? '').trim();
+  if (!plan_id || !composite_id) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('goal_plan_composites') as Any)
+    .insert({ plan_id, composite_id });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  return { ok: true };
+}
+
+export async function detachCompositeFromPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const plan_id = String(formData.get('plan_id') ?? '');
+  const { error } = await (supabase.from('goal_plan_composites') as Any).delete().eq('id', id);
   if (error) return { ok: false, error: error.message };
   if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
   return { ok: true };

@@ -1,5 +1,6 @@
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PerformanceManagementClient } from './PerformanceManagementClient';
 import type { Activity, Student } from '@/lib/supabase/types';
@@ -13,9 +14,16 @@ export interface ActivityRow extends Activity {
 export default async function PerformanceManagementPage() {
   await requireRole('admin', 'director');
   const supabase = createClient();
+  const seasonCtx = await getSeasonContext();
+  const seasonId = seasonCtx.selected?.id;
+
+  let activityQuery = supabase.from('activities').select('*').order('occurred_on', { ascending: false }).limit(200);
+  if (seasonId) {
+    activityQuery = activityQuery.eq('season_id', seasonId);
+  }
 
   const [{ data: activityRows }, { data: studentRows }] = await Promise.all([
-    supabase.from('activities').select('*').order('occurred_on', { ascending: false }).limit(200),
+    activityQuery,
     supabase.from('students').select('id, full_name, jersey_number, active').eq('active', true).order('full_name'),
   ]);
 
