@@ -1117,3 +1117,272 @@ export async function detachCompositeFromPlan(formData: FormData) {
   if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
   return { ok: true };
 }
+
+// ============================================================================
+// Practices (coach + director) — activities with activity_type='practice'
+// ============================================================================
+
+export async function createPractice(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+  const title = String(formData.get('title') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const source_plan_id = String(formData.get('source_practice_plan_id') ?? '').trim() || null;
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
+  const student_ids_raw = String(formData.get('student_ids') ?? '').trim();
+
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+  if (!season_id) return { ok: false, error: 'No active season. Create or activate one first.' };
+
+  let studentIds: string[] = [];
+  if (student_ids_raw) {
+    try { studentIds = JSON.parse(student_ids_raw); } catch { /* ignore */ }
+  }
+
+  // Create the practice activity
+  const { data: actRow, error: aErr } = await (supabase.from('activities') as Any)
+    .insert({
+      activity_type: 'practice',
+      occurred_on, starts_at, duration_minutes,
+      title, focus, notes,
+      source_practice_plan_id: source_plan_id,
+      season_id,
+      logged_by: user.id,
+    })
+    .select('id').single();
+
+  if (aErr || !actRow) return { ok: false, error: aErr?.message ?? 'Could not create practice.' };
+  const activity_id = (actRow as { id: string }).id;
+
+  // Copy items from plan template (if provided)
+  if (source_plan_id) {
+    const { data: templateItems } = await supabase
+      .from('practice_plan_items').select('*').eq('plan_id', source_plan_id).order('sequence');
+    if (templateItems && templateItems.length > 0) {
+      // We don't have a practice_items table for activities — items live on the plan.
+      // Intentional: the practice references source_practice_plan_id; UI pulls items from that plan.
+      // If coach wants to modify items for THIS practice specifically, we'd need per-activity items.
+      // Skipping ad-hoc item customization for now.
+    }
+  }
+
+  // Add roster
+  if (studentIds.length > 0) {
+    const rows = studentIds.map((sid) => ({ activity_id, student_id: sid }));
+    const { error: rErr } = await (supabase.from('activity_students') as Any).insert(rows);
+    if (rErr) {
+      // Non-fatal — activity is created, roster just failed
+      return { ok: true, id: activity_id, warning: `Activity created but roster failed: ${rErr.message}` };
+    }
+  }
+
+  revalidatePath('/dashboard/practices');
+  return { ok: true, id: activity_id };
+}
+
+export async function updatePractice(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+  const title = String(formData.get('title') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+
+  if (!id) return { ok: false, error: 'Missing id' };
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({ occurred_on, starts_at, duration_minutes, title, focus, notes })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/practices');
+  revalidatePath(`/dashboard/practices/${id}`);
+  return { ok: true };
+}
+
+export async function deletePractice(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('activities') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/practices');
+  return { ok: true };
+}
+
+// Generic roster management (works for practices AND games)
+
+export async function addStudentToActivity(formData: FormData) {
+  const supabase = createClient();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!activity_id || !student_id) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('activity_students') as Any)
+    .insert({ activity_id, student_id });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/practices/${activity_id}`);
+  revalidatePath(`/dashboard/activities/${activity_id}`);
+  return { ok: true };
+}
+
+export async function removeStudentFromActivity(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const activity_id = String(formData.get('activity_id') ?? '');
+  const { error } = await (supabase.from('activity_students') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (activity_id) {
+    revalidatePath(`/dashboard/practices/${activity_id}`);
+    revalidatePath(`/dashboard/activities/${activity_id}`);
+  }
+  return { ok: true };
+}
+
+// Attendance
+
+export async function setAttendance(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const attended_str = String(formData.get('attended') ?? '').trim();
+  // 'true' | 'false' | '' (clear)
+  const attended = attended_str === 'true' ? true : attended_str === 'false' ? false : null;
+
+  if (!activity_id || !student_id) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('attendance') as Any).upsert({
+    activity_id, student_id, attended, recorded_by: user.id,
+  }, { onConflict: 'activity_id,student_id' });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/practices/${activity_id}`);
+  return { ok: true };
+}
+
+// ============================================================================
+// Games (coach + director) — activities with activity_type='game'
+// ============================================================================
+
+export async function createGame(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const opponent = String(formData.get('opponent') ?? '').trim() || null;
+  const our_score_str = String(formData.get('our_score') ?? '').trim();
+  const our_score = our_score_str ? parseInt(our_score_str, 10) : null;
+  const opp_score_str = String(formData.get('opp_score') ?? '').trim();
+  const opp_score = opp_score_str ? parseInt(opp_score_str, 10) : null;
+  const home_away = String(formData.get('home_away') ?? '').trim() || null;
+  const venue = String(formData.get('venue') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
+
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+  if (!season_id) return { ok: false, error: 'No active season.' };
+
+  const { data, error } = await (supabase.from('activities') as Any)
+    .insert({
+      activity_type: 'game',
+      occurred_on, starts_at,
+      opponent, our_score, opp_score, home_away, venue, notes,
+      season_id, logged_by: user.id,
+    })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/activities');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateGame(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const opponent = String(formData.get('opponent') ?? '').trim() || null;
+  const our_score_str = String(formData.get('our_score') ?? '').trim();
+  const our_score = our_score_str ? parseInt(our_score_str, 10) : null;
+  const opp_score_str = String(formData.get('opp_score') ?? '').trim();
+  const opp_score = opp_score_str ? parseInt(opp_score_str, 10) : null;
+  const home_away = String(formData.get('home_away') ?? '').trim() || null;
+  const venue = String(formData.get('venue') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+
+  if (!id || !occurred_on) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({ occurred_on, opponent, our_score, opp_score, home_away, venue, notes })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/activities');
+  revalidatePath(`/dashboard/activities/${id}`);
+  return { ok: true };
+}
+
+export async function deleteGame(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('activities') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/activities');
+  return { ok: true };
+}
+
+// Game stats
+
+export async function upsertGameStat(formData: FormData) {
+  const supabase = createClient();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!activity_id || !student_id) return { ok: false, error: 'Missing fields' };
+
+  const intFromForm = (key: string) => {
+    const v = String(formData.get(key) ?? '').trim();
+    return v ? parseInt(v, 10) : 0;
+  };
+  const nullableIntFromForm = (key: string) => {
+    const v = String(formData.get(key) ?? '').trim();
+    return v ? parseInt(v, 10) : null;
+  };
+
+  const payload = {
+    activity_id,
+    student_id,
+    goals: intFromForm('goals'),
+    assists: intFromForm('assists'),
+    plus_minus: intFromForm('plus_minus'),
+    shots: intFromForm('shots'),
+    penalty_mins: intFromForm('penalty_mins'),
+    time_on_ice: String(formData.get('time_on_ice') ?? '').trim() || null,
+    saves: nullableIntFromForm('saves'),
+    shots_against: nullableIntFromForm('shots_against'),
+    goals_against: nullableIntFromForm('goals_against'),
+    notes: String(formData.get('notes') ?? '').trim() || null,
+  };
+
+  const { error } = await (supabase.from('game_stats') as Any).upsert(payload, {
+    onConflict: 'activity_id,student_id',
+  });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/activities/${activity_id}`);
+  return { ok: true };
+}
