@@ -1,198 +1,165 @@
-# MESA v2 — Phase 1: Foundation
+# MESA v2 — Phase 2: Admin module
 
-**Michigan Elite Sports Academy · Training Platform**
-
-This is the start of the v2 rebuild. Phase 1 deploys the new schema and confirms the new 6-role sidebar structure works. **No user-facing features** — that's Phases 2-7.
+Builds on Phase 1. Every admin sidebar item now works.
 
 ---
 
-## What's in Phase 1
+## What's new in Phase 2
 
-- ✅ Complete v2 database schema (migration `0006_v2_full_rewrite.sql`)
-- ✅ 6 roles: Admin, Director, Coach, Trainer, Student, Parent
-- ✅ Each role has the correct sidebar per the spec
-- ✅ Every sidebar item leads to either a real page (Home, Profile) or a "Coming in Phase N" stub
-- ✅ Your email (`justin.combs@gltconsulting.io`) is hard-coded as admin
-- ✅ Settings page still works — you can update your name and phone
-- ✅ Sign in / sign out / auth still works
+### ✅ Users page (`/dashboard/users`)
+- Full user directory with search + role filter
+- Change any user's role from a dropdown (with confirmation)
+- Pending invites list at top with revoke option
+- Invite user modal — creates a pending invite that auto-assigns the role when the invited email signs up
+- Can't accidentally remove your own admin role (self-lockout prevention)
 
-## What's NOT in Phase 1
+### ✅ Drill Repository (`/dashboard/drills`)
+- Grid view of on-ice drills with category filter and search
+- Add / edit / delete drills
+- Category, duration, age groups, equipment, instructions
 
-Every module is a stub. You'll see the sidebar and placeholder pages. Real functionality rolls out phase by phase:
+### ✅ Exercise Repository (`/dashboard/exercises`) — NEW
+- Off-ice exercise library (trainer's side)
+- Same structure as drills but for strength/conditioning/mobility/plyometrics/skill/core/recovery
+- Default sets, reps, duration for timed exercises (e.g., plank)
 
-- **Phase 2 — Admin module**: Users, Drill/Exercise/Goal Template/Performance Test repositories
-- **Phase 3 — Director module**: Add Users, Students, Practice Plans, Goal Management, Performance Management
-- **Phase 4 — Coach module**: Drills, Practices, Activities (games), Students
-- **Phase 5 — Trainer module**: Exercises, Off-Ice Workouts, per-set logging, Students
-- **Phase 6 — Student/Parent dashboards**: Self-registration (13+), personal dashboards
-- **Phase 7 — Review integration**: Goal reviews pull in performance data
+### ✅ Goal Template Repository (`/dashboard/goal-templates`)
+- Reusable goal examples (for when director builds student plans in Phase 3)
+- Domain tabs (On-Ice / Off-Ice / All)
+- Full 12-category taxonomy
 
----
-
-## ⚠️ CRITICAL: Deployment wipes your database
-
-The migration drops every v1 app table. Students, goals, ratings, activities, drills, teams — everything from v1 is gone after this runs. Only `auth.users` stays intact (so your login still works).
-
-You confirmed this is what you want. Just flagging it one more time before you run the SQL.
-
----
-
-## Deployment — in order
-
-### Step 1 — Run the SQL migration
-
-1. Go to Supabase dashboard → your MESA project
-2. Left sidebar → **SQL Editor** → **New query**
-3. Unzip `mesa-v2-phase1-clean.zip` on your Mac
-4. Open `supabase/migrations/0006_v2_full_rewrite.sql` in a text editor
-5. Copy **all** contents (Cmd+A, Cmd+C)
-6. Paste into Supabase SQL Editor
-7. Click **Run**
-8. Expected: "Success. No rows returned." — possibly with a few warnings about dropping non-existent objects (harmless)
-
-**Verify:**
-
-Run this diagnostic in a new query:
-
-```
-select
-  (select count(*) from public.profiles) as profiles,
-  (select count(*) from public.academy) as academy_rows,
-  (select role from public.profiles where lower(email) = 'justin.combs@gltconsulting.io') as your_role;
-```
-
-Expected result:
-- `profiles`: 1+ (however many auth users you have)
-- `academy_rows`: 1
-- `your_role`: `admin`
-
-If `your_role` is NOT `admin`, paste the diagnostic output and I'll fix.
-
-### Step 2 — Upload code to GitHub
-
-**Heads up:** this is a large rewrite — lots of files changed, deleted, added. The cleanest approach is:
-
-**Option A — Overwrite approach (simpler):**
-1. Unzip the clean file on your Mac
-2. Go to `github.com/YOUR_USERNAME/mesa`
-3. Add file → Upload files → drag **contents of unzipped `mesa/` folder**
-4. GitHub will overwrite existing files. BUT it won't delete the old v1 route folders (drills, family, games, etc.) that no longer exist.
-5. After upload, you'll need to manually delete these v1 folders from GitHub:
-   - `app/dashboard/drills/` (and subfolders) ← WAIT: v2 keeps drills/ but as a stub. Actually delete the OLD contents first
-   - `app/dashboard/players/`
-   - `app/dashboard/games/`
-   - `app/dashboard/teams/`
-   - `app/dashboard/ratings/`
-   - `app/dashboard/goals/`
-   - `app/dashboard/family/FamilyClient.tsx` (if it exists)
-   - `app/dashboard/students/StudentsClient.tsx` and `[id]/` subfolder
-   - `app/dashboard/invites/` (renamed to `invite` singular)
-   - `app/dashboard/goal-templates/GoalTemplatesClient.tsx` and `[id]/` subfolder
-   - Old migration files `0001` through `0005`
-
-**Option B — Fresh repo (cleanest, recommended):**
-1. Create a new GitHub repo named `mesa-v2`
-2. Upload the unzipped contents to the empty repo
-3. In Vercel: Settings → Git → Disconnect current repo → Connect to `mesa-v2`
-4. Env vars stay intact
-
-**I recommend Option B.** No leftover files to confuse the build.
-
-### Step 3 — Commit & deploy
-
-Commit message: `v2 Phase 1 - foundation`. Vercel auto-deploys in ~90 seconds.
-
-### Step 4 — Test
-
-1. Sign out of MESA if you were signed in
-2. Sign back in with `justin.combs@gltconsulting.io`
-3. You should see:
-   - Page header: "Signed in · ADMIN"
-   - Sidebar with 7 items: Home, Users, Drills, Exercises, Goal Templates, Performance Tests, Profile
-4. Click any sidebar item — should show a "Coming in Phase N" stub with a "Back to home" button
-5. Click Profile → edit your name → save → confirm it persists
+### ✅ Performance Test Repository (`/dashboard/performance-tests`) — NEW
+- Define standardized tests the academy administers
+- Domain (on-ice / off-ice), unit, direction (higher-is-better or lower-is-better)
+- Empty by default — you seed it with your own tests
 
 ---
 
-## If other users existed before
+## What's NOT in Phase 2
 
-Any non-admin users who had accounts in v1 now have `role = 'parent'` by default. To change:
-
-1. Supabase → Table Editor → `profiles`
-2. Find the row → double-click the `role` cell
-3. Type one of: `admin`, `director`, `coach`, `trainer`, `student`, `parent`
-4. Press Enter → Save changes at bottom
-
-They need to sign out and back in to pick up the new role.
+- Director module pages (Students, Practice Plans, Goal Management, Performance Management) — still stubs, arrive in Phase 3
+- Coach module (Practices, Activities, Students) — Phase 4
+- Trainer module (Workouts, etc.) — Phase 5
+- Student / Parent dashboards — Phase 6
 
 ---
 
-## Sidebar per role reference
+## No SQL migration needed
 
-| Role | Sidebar items |
-|------|---------------|
-| **Admin** | Home, Users, Drills, Exercises, Goal Templates, Performance Tests, Profile |
-| **Director** | Home, Add Users, Students, Practice Plans, Goal Management, Performance Management, Profile |
-| **Coach** | Home, Drills, Practices, Activities, Students, Profile |
-| **Trainer** | Home, Exercises, Off-Ice Workouts, Students, Profile |
-| **Student** | Home, Goal Management, Performance Management, Profile |
-| **Parent** | Home, My Family, Profile |
+All tables were created in Phase 1's migration. Pure code deploy this time.
+
+---
+
+## Deployment
+
+1. Unzip `mesa-v2-phase2-clean.zip` on your Mac
+2. Go to your `mesa-2` GitHub repo → **Add file → Upload files**
+3. Drag the contents of the unzipped `mesa/` folder → it'll overwrite files from Phase 1
+4. Commit: `Phase 2 - Admin module`
+5. Vercel auto-deploys in ~90 seconds
+
+### If GitHub won't overwrite
+
+Sometimes GitHub's upload gets stuck when you overwrite many files. If it shows an error or just spins:
+
+1. Stop the upload
+2. Refresh the repo page
+3. Try uploading in smaller batches (e.g., just the `app/` folder, then `components/`, etc.)
+4. Or delete the old `app/dashboard/` folder first, then upload fresh
+
+---
+
+## Testing Phase 2
+
+### Sign in as admin (you)
+
+1. Navigate to your Vercel URL → sign in
+2. Sidebar shows 7 items: Home, Users, Drills, Exercises, Goal Templates, Performance Tests, Profile
+
+### Test Users page
+
+1. Click **Users** → see yourself in the list (role: admin)
+2. Click **Invite user** top-right
+3. Enter a test email + pick a role → Create invite
+4. New entry appears in "Pending invites" section
+5. Click **Revoke** → entry disappears
+
+### Test creating a drill
+
+1. Click **Drills** → empty state appears (expected — wiped DB)
+2. Click **Add drill** top-right
+3. Fill: title "Crossovers", category "skating", duration 15 → Save
+4. Drill appears as a card
+5. Click the card → modal opens for editing
+6. Try delete → confirms → drill gone
+
+### Test creating an exercise
+
+1. Click **Exercises** → empty state
+2. Add exercise "Back Squat", category "strength", default sets 5, default reps 5 → Save
+3. Card appears with "5 × 5" in top-right
+
+### Test creating a goal template
+
+1. Click **Goal Templates** → empty
+2. Add template: "Crossovers under control", On-Ice, Skating, target 10, unit "crossovers", 8 weeks
+3. Card appears with domain pill and category label
+
+### Test creating a performance test
+
+1. Click **Performance Tests** → empty
+2. Add test: "40-yard dash", Off-Ice, unit "sec", Lower is better
+3. Add another: "1RM back squat", Off-Ice, unit "lb", Higher is better
+4. Both appear in the list
+
+### Test role change
+
+1. Users page → find a test user (if you have one) → change their role dropdown → confirm
+2. Or: create a test user in Supabase Auth → come back to Users → change their role
+
+---
+
+## Permissions at Phase 2
+
+| Action | Admin | Director | Coach | Trainer |
+|--------|-------|----------|-------|---------|
+| Access Users page | ✓ | — | — | — |
+| Change user roles | ✓ | — | — | — |
+| Create/revoke invites | ✓ | — | — | — |
+| Access Drills page | ✓ | ✓ | ✓ | — |
+| Manage drills | ✓ | ✓ | ✓ (own) | — |
+| Access Exercises page | ✓ | ✓ | — | ✓ |
+| Manage exercises | ✓ | ✓ | — | ✓ (own) |
+| Access Goal Templates | ✓ | ✓ | — | — |
+| Manage goal templates | ✓ | ✓ | — | — |
+| Access Performance Tests | ✓ | ✓ | — | — |
+| Manage performance tests | ✓ | ✓ | — | — |
+
+The Director sees some overlap (Drills, Exercises) because they'll use those repos in Phase 3 when building plans. Coaches can also contribute to Drills; Trainers can contribute to Exercises. The repo pages are shared — different roles see them via their respective sidebars.
 
 ---
 
 ## What to report back
 
-After deploying and testing:
-
-- **"Phase 1 green, signed in as admin, sidebar looks right"** → we start Phase 2 (Admin module)
-- **"Migration error: [paste]"** → debug the SQL
-- **"Build error on Vercel: [paste]"** → debug the build
-- **"Sidebar is wrong — I see [X]"** → we fix the nav
-- **"Role came through as [X] not admin"** → we fix the trigger
+- **"Phase 2 green, all 5 admin pages work, can create+edit+delete in each"** → Phase 3 (Director module)
+- **"Build error: [paste]"** → we fix
+- **"[Page] throws an error: [paste]"** → we fix
+- **"Works but [X] is wrong"** → feedback
 
 ---
 
-## Phase 1 file inventory
+## Common testing gotchas
 
-```
-mesa/
-├── supabase/migrations/
-│   └── 0006_v2_full_rewrite.sql    ← the one migration to rule them all
-├── app/
-│   ├── actions.ts                  ← just updateProfile for now
-│   ├── page.tsx                    ← landing (kept from v1)
-│   ├── sign-in/                    ← auth (kept)
-│   ├── auth/callback/              ← magic link (kept)
-│   ├── api/health/webhook/         ← placeholder, not wired
-│   └── dashboard/
-│       ├── layout.tsx              ← app shell
-│       ├── page.tsx                ← v2 role-aware home
-│       ├── settings/               ← real profile editor
-│       └── 14 stub folders         ← all sidebar destinations, showing ComingSoon
-├── components/
-│   ├── layout/
-│   │   ├── AppShell.tsx            ← new 6-role nav
-│   │   └── SignOutButton.tsx
-│   └── ui/
-│       ├── ComingSoon.tsx          ← NEW, reusable stub
-│       ├── EmptyState.tsx
-│       ├── FormField.tsx
-│       ├── Modal.tsx
-│       └── PageHeader.tsx
-├── lib/
-│   ├── auth.ts                     ← requireProfile, requireRole
-│   ├── form-helpers.ts             ← toFormAction
-│   ├── goal-taxonomy.ts            ← domain/category labels
-│   └── supabase/
-│       ├── admin.ts
-│       ├── client.ts
-│       ├── server.ts
-│       └── types.ts                ← full v2 types
-└── middleware.ts
-```
+### "No matches" when I know I added something
 
----
+- The repository filters by `active = true`. If you deleted and re-added, the active filter still lets through.
+- If you edited an item and the category changed, your filter might not match anymore. Clear the category filter.
 
-## Rollback
+### Can't change my own role
 
-There isn't one, easily. The migration is one-way. If something's seriously wrong, say so and we'll write a recovery SQL. But the current path assumes you want to move forward.
+- Intentional — would lock you out. To demote yourself, first promote someone else to admin, have them change yours.
+
+### Invited user signs up but still gets "parent" role
+
+- Check the invite email exactly matches what they signed up with (lowercase, no trailing spaces, etc.)
+- Check `invites` table status — should flip to "consumed" on signup. If it's still "pending," the emails didn't match.
