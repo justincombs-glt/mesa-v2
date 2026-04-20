@@ -51,6 +51,7 @@ function navForRole(role: AppRole): NavLink[] {
         { href: '/dashboard/goal-templates', label: 'Goal Templates', icon: icons.goals },
         { href: '/dashboard/performance-tests', label: 'Performance Tests', icon: icons.tests },
         { href: '/dashboard/composite-performance-tests', label: 'Composite Tests', icon: icons.performance },
+        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
         { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
         settings,
       ];
@@ -62,6 +63,7 @@ function navForRole(role: AppRole): NavLink[] {
         { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
         { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
         { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
+        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
         { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
         settings,
       ];
@@ -79,6 +81,7 @@ function navForRole(role: AppRole): NavLink[] {
         home,
         { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
         { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
+        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
         { href: '/dashboard/students', label: 'Students', icon: icons.family },
         settings,
       ];

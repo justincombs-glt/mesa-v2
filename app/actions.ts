@@ -1386,3 +1386,178 @@ export async function upsertGameStat(formData: FormData) {
   revalidatePath(`/dashboard/activities/${activity_id}`);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5a: CPT Session recording
+// ---------------------------------------------------------------------------
+
+export async function createCptSession(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const composite_id = String(formData.get('composite_id') ?? '').trim();
+  const session_date = String(formData.get('session_date') ?? '').trim();
+  const conditions_notes = String(formData.get('conditions_notes') ?? '').trim() || null;
+  const is_baseline = formData.get('is_baseline') === 'on' || formData.get('is_baseline') === 'true';
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
+
+  if (!composite_id) return { ok: false, error: 'Composite test is required.' };
+  if (!session_date) return { ok: false, error: 'Session date is required.' };
+  if (!season_id) return { ok: false, error: 'No active season.' };
+
+  // If marking this as baseline, first unset any existing baseline for this composite+season
+  if (is_baseline) {
+    await (supabase.from('cpt_sessions') as Any)
+      .update({ is_baseline: false })
+      .eq('composite_id', composite_id)
+      .eq('season_id', season_id)
+      .eq('is_baseline', true);
+  }
+
+  const { data, error } = await (supabase.from('cpt_sessions') as Any)
+    .insert({
+      composite_id,
+      session_date,
+      conditions_notes,
+      is_baseline,
+      season_id,
+      administered_by: user.id,
+    })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/cpt-sessions');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateCptSession(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const session_date = String(formData.get('session_date') ?? '').trim();
+  const conditions_notes = String(formData.get('conditions_notes') ?? '').trim() || null;
+
+  if (!id || !session_date) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('cpt_sessions') as Any)
+    .update({ session_date, conditions_notes })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/cpt-sessions');
+  revalidatePath(`/dashboard/cpt-sessions/${id}`);
+  return { ok: true };
+}
+
+export async function deleteCptSession(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  // Delete the session — ON DELETE SET NULL on results means results remain but unlinked
+  // For Phase 5a semantics, we also want to remove the results that were PART of this session
+  // Policy: results are bound to the session. Delete them.
+  await (supabase.from('performance_test_results') as Any)
+    .delete().eq('cpt_session_id', id);
+  const { error } = await (supabase.from('cpt_sessions') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/cpt-sessions');
+  return { ok: true };
+}
+
+export async function toggleCptBaseline(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const next = formData.get('next') === 'true';
+
+  if (!id) return { ok: false, error: 'Missing session id.' };
+
+  // Get the session so we know its composite + season
+  const { data: sess } = await supabase
+    .from('cpt_sessions')
+    .select('composite_id, season_id')
+    .eq('id', id).single();
+  if (!sess) return { ok: false, error: 'Session not found.' };
+  const { composite_id, season_id } = sess as { composite_id: string; season_id: string | null };
+
+  if (next && season_id) {
+    // Clear any existing baseline in the same (composite, season)
+    await (supabase.from('cpt_sessions') as Any)
+      .update({ is_baseline: false })
+      .eq('composite_id', composite_id)
+      .eq('season_id', season_id)
+      .eq('is_baseline', true)
+      .neq('id', id);
+  }
+
+  const { error } = await (supabase.from('cpt_sessions') as Any)
+    .update({ is_baseline: next })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/cpt-sessions');
+  revalidatePath(`/dashboard/cpt-sessions/${id}`);
+  return { ok: true };
+}
+
+export async function upsertCptResult(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const cpt_session_id = String(formData.get('cpt_session_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const test_id = String(formData.get('test_id') ?? '').trim();
+  const value_str = String(formData.get('value') ?? '').trim();
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
+  const is_baseline = formData.get('is_baseline') === 'true';
+  const recorded_at = String(formData.get('session_date') ?? '').trim();
+
+  if (!cpt_session_id || !student_id || !test_id) {
+    return { ok: false, error: 'Missing fields' };
+  }
+
+  // Empty value -> delete any existing result for this cell
+  if (value_str === '') {
+    const { error: delErr } = await (supabase.from('performance_test_results') as Any)
+      .delete()
+      .eq('cpt_session_id', cpt_session_id)
+      .eq('student_id', student_id)
+      .eq('test_id', test_id);
+    if (delErr) return { ok: false, error: delErr.message };
+    revalidatePath(`/dashboard/cpt-sessions/${cpt_session_id}`);
+    return { ok: true };
+  }
+
+  const value = parseFloat(value_str);
+  if (Number.isNaN(value)) return { ok: false, error: 'Value must be a number.' };
+
+  // Check if a row exists for this cell
+  const { data: existing } = await supabase
+    .from('performance_test_results').select('id')
+    .eq('cpt_session_id', cpt_session_id)
+    .eq('student_id', student_id)
+    .eq('test_id', test_id).maybeSingle();
+
+  const payload = {
+    student_id,
+    test_id,
+    value,
+    cpt_session_id,
+    is_baseline,
+    season_id,
+    recorded_at: recorded_at ? `${recorded_at}T00:00:00` : new Date().toISOString(),
+    recorded_by: user.id,
+  };
+
+  if (existing) {
+    const { error } = await (supabase.from('performance_test_results') as Any)
+      .update({ value, is_baseline, season_id })
+      .eq('id', (existing as { id: string }).id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await (supabase.from('performance_test_results') as Any).insert(payload);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/dashboard/cpt-sessions/${cpt_session_id}`);
+  return { ok: true };
+}
