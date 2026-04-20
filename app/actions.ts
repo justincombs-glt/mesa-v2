@@ -1561,3 +1561,408 @@ export async function upsertCptResult(formData: FormData) {
   revalidatePath(`/dashboard/cpt-sessions/${cpt_session_id}`);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5b: Workout plans + scheduled workouts + per-set logging
+// ---------------------------------------------------------------------------
+
+// -- Workout plans ----------------------------------------------------------
+
+export async function createWorkoutPlan(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+
+  if (!title) return { ok: false, error: 'Title is required.' };
+
+  const { data, error } = await (supabase.from('workout_plans') as Any)
+    .insert({ title, description, focus, duration_minutes, is_template: true, created_by: user.id })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/workout-plans');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export async function updateWorkoutPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+
+  if (!id || !title) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('workout_plans') as Any)
+    .update({ title, description, focus, duration_minutes })
+    .eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/workout-plans');
+  revalidatePath(`/dashboard/workout-plans/${id}`);
+  return { ok: true };
+}
+
+export async function deleteWorkoutPlan(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('workout_plans') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/workout-plans');
+  return { ok: true };
+}
+
+// -- Workout plan items -----------------------------------------------------
+
+export async function addWorkoutPlanItem(formData: FormData) {
+  const supabase = createClient();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const exercise_id = String(formData.get('exercise_id') ?? '').trim();
+  if (!plan_id || !exercise_id) return { ok: false, error: 'Missing fields' };
+
+  const nInt = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseInt(v, 10) : null;
+  };
+  const nNum = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseFloat(v) : null;
+  };
+
+  // Find the next sequence
+  const { data: existing } = await supabase
+    .from('workout_plan_items').select('sequence')
+    .eq('plan_id', plan_id).order('sequence', { ascending: false }).limit(1);
+  const rows = (existing ?? []) as Array<{ sequence: number }>;
+  const sequence = rows.length > 0 ? rows[0].sequence + 1 : 0;
+
+  const { error } = await (supabase.from('workout_plan_items') as Any).insert({
+    plan_id, exercise_id, sequence,
+    default_sets: nInt('default_sets'),
+    default_reps: nInt('default_reps'),
+    default_weight_lbs: nNum('default_weight_lbs'),
+    default_duration_seconds: nInt('default_duration_seconds'),
+    default_rest_seconds: nInt('default_rest_seconds'),
+    coach_notes: String(formData.get('coach_notes') ?? '').trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/workout-plans/${plan_id}`);
+  return { ok: true };
+}
+
+export async function updateWorkoutPlanItem(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const nInt = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseInt(v, 10) : null;
+  };
+  const nNum = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseFloat(v) : null;
+  };
+
+  const { error } = await (supabase.from('workout_plan_items') as Any).update({
+    default_sets: nInt('default_sets'),
+    default_reps: nInt('default_reps'),
+    default_weight_lbs: nNum('default_weight_lbs'),
+    default_duration_seconds: nInt('default_duration_seconds'),
+    default_rest_seconds: nInt('default_rest_seconds'),
+    coach_notes: String(formData.get('coach_notes') ?? '').trim() || null,
+  }).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/workout-plans/${plan_id}`);
+  return { ok: true };
+}
+
+export async function deleteWorkoutPlanItem(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const { error } = await (supabase.from('workout_plan_items') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (plan_id) revalidatePath(`/dashboard/workout-plans/${plan_id}`);
+  return { ok: true };
+}
+
+export async function reorderWorkoutPlanItems(formData: FormData) {
+  const supabase = createClient();
+  const plan_id = String(formData.get('plan_id') ?? '').trim();
+  const ordered_ids_raw = String(formData.get('ordered_ids') ?? '').trim();
+  if (!plan_id || !ordered_ids_raw) return { ok: false, error: 'Missing fields' };
+
+  let orderedIds: string[] = [];
+  try { orderedIds = JSON.parse(ordered_ids_raw); } catch { /* ignore */ }
+  if (orderedIds.length === 0) return { ok: false, error: 'No items to reorder' };
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await (supabase.from('workout_plan_items') as Any)
+      .update({ sequence: i }).eq('id', orderedIds[i]);
+    if (error) return { ok: false, error: error.message };
+  }
+  revalidatePath(`/dashboard/workout-plans/${plan_id}`);
+  return { ok: true };
+}
+
+// -- Scheduled workouts (activity_type = 'off_ice_workout') ----------------
+
+export async function createWorkout(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+  const title = String(formData.get('title') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const off_ice_category = String(formData.get('off_ice_category') ?? '').trim() || null;
+  const custom_category_name = String(formData.get('custom_category_name') ?? '').trim() || null;
+  const source_workout_plan_id = String(formData.get('source_workout_plan_id') ?? '').trim() || null;
+  const season_id = String(formData.get('season_id') ?? '').trim() || null;
+  const student_ids_raw = String(formData.get('student_ids') ?? '').trim();
+
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+  if (!season_id) return { ok: false, error: 'No active season. Create or activate one first.' };
+
+  let studentIds: string[] = [];
+  if (student_ids_raw) {
+    try { studentIds = JSON.parse(student_ids_raw); } catch { /* ignore */ }
+  }
+
+  // Create the workout activity
+  const { data: actRow, error: aErr } = await (supabase.from('activities') as Any)
+    .insert({
+      activity_type: 'off_ice_workout',
+      occurred_on, starts_at, duration_minutes,
+      title, focus, notes,
+      off_ice_category, custom_category_name,
+      source_workout_plan_id,
+      season_id, logged_by: user.id,
+    })
+    .select('id').single();
+
+  if (aErr || !actRow) return { ok: false, error: aErr?.message ?? 'Could not create workout.' };
+  const activity_id = (actRow as { id: string }).id;
+
+  // Copy roster
+  if (studentIds.length > 0) {
+    const rosterRows = studentIds.map((sid) => ({ activity_id, student_id: sid }));
+    await (supabase.from('activity_students') as Any).insert(rosterRows);
+  }
+
+  // If a plan is attached, copy the plan items into workout_exercises
+  if (source_workout_plan_id) {
+    const { data: planItems } = await supabase
+      .from('workout_plan_items')
+      .select('exercise_id, sequence, default_sets, coach_notes')
+      .eq('plan_id', source_workout_plan_id)
+      .order('sequence');
+    const items = (planItems ?? []) as Array<{
+      exercise_id: string; sequence: number;
+      default_sets: number | null; coach_notes: string | null;
+    }>;
+    if (items.length > 0) {
+      const exerciseRows = items.map((it) => ({
+        activity_id,
+        exercise_id: it.exercise_id,
+        sequence: it.sequence,
+        sets: it.default_sets,
+        coach_notes: it.coach_notes,
+      }));
+      await (supabase.from('workout_exercises') as Any).insert(exerciseRows);
+    }
+  }
+
+  revalidatePath('/dashboard/workouts');
+  return { ok: true, id: activity_id };
+}
+
+export async function updateWorkout(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+  const title = String(formData.get('title') ?? '').trim() || null;
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const off_ice_category = String(formData.get('off_ice_category') ?? '').trim() || null;
+  const custom_category_name = String(formData.get('custom_category_name') ?? '').trim() || null;
+
+  if (!id || !occurred_on) return { ok: false, error: 'Missing fields' };
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({ occurred_on, starts_at, duration_minutes, title, focus, notes, off_ice_category, custom_category_name })
+    .eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/workouts');
+  revalidatePath(`/dashboard/workouts/${id}`);
+  return { ok: true };
+}
+
+export async function deleteWorkout(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('activities') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/workouts');
+  return { ok: true };
+}
+
+// -- Workout exercises (the list of exercises within a scheduled workout) --
+
+export async function addWorkoutExercise(formData: FormData) {
+  const supabase = createClient();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const exercise_id = String(formData.get('exercise_id') ?? '').trim();
+  if (!activity_id || !exercise_id) return { ok: false, error: 'Missing fields' };
+
+  const nInt = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseInt(v, 10) : null;
+  };
+
+  const { data: existing } = await supabase
+    .from('workout_exercises').select('sequence')
+    .eq('activity_id', activity_id).order('sequence', { ascending: false }).limit(1);
+  const rows = (existing ?? []) as Array<{ sequence: number }>;
+  const sequence = rows.length > 0 ? rows[0].sequence + 1 : 0;
+
+  const { error } = await (supabase.from('workout_exercises') as Any).insert({
+    activity_id, exercise_id, sequence,
+    sets: nInt('sets'),
+    coach_notes: String(formData.get('coach_notes') ?? '').trim() || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}
+
+export async function updateWorkoutExercise(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const nInt = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v ? parseInt(v, 10) : null;
+  };
+
+  const { error } = await (supabase.from('workout_exercises') as Any).update({
+    sets: nInt('sets'),
+    coach_notes: String(formData.get('coach_notes') ?? '').trim() || null,
+  }).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}
+
+export async function deleteWorkoutExercise(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const { error } = await (supabase.from('workout_exercises') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}
+
+// -- Per-set logging (the hero of Phase 5b) --------------------------------
+
+export async function upsertWorkoutSet(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const workout_exercise_id = String(formData.get('workout_exercise_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const set_number_str = String(formData.get('set_number') ?? '').trim();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+
+  if (!workout_exercise_id || !student_id || !set_number_str) {
+    return { ok: false, error: 'Missing fields' };
+  }
+  const set_number = parseInt(set_number_str, 10);
+  if (Number.isNaN(set_number)) return { ok: false, error: 'Invalid set number' };
+
+  const nNum = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v === '' ? null : parseFloat(v);
+  };
+  const nInt = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v === '' ? null : parseInt(v, 10);
+  };
+
+  const weight = nNum('weight');
+  const reps = nInt('reps');
+  const rpe = nInt('rpe');
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+
+  // Check if a row already exists for this (workout_exercise_id, student_id, set_number)
+  const { data: existing } = await supabase
+    .from('workout_exercise_sets').select('id')
+    .eq('workout_exercise_id', workout_exercise_id)
+    .eq('student_id', student_id)
+    .eq('set_number', set_number)
+    .maybeSingle();
+
+  // Delete-on-empty: if ALL logged fields are blank, delete the row
+  const allBlank = weight === null && reps === null && rpe === null && !notes;
+
+  if (allBlank) {
+    if (existing) {
+      const { error } = await (supabase.from('workout_exercise_sets') as Any)
+        .delete().eq('id', (existing as { id: string }).id);
+      if (error) return { ok: false, error: error.message };
+    }
+    if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+    return { ok: true };
+  }
+
+  if (existing) {
+    const { error } = await (supabase.from('workout_exercise_sets') as Any)
+      .update({ weight, reps, rpe, notes })
+      .eq('id', (existing as { id: string }).id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await (supabase.from('workout_exercise_sets') as Any).insert({
+      workout_exercise_id, student_id, set_number,
+      weight, reps, rpe, notes,
+    });
+    if (error) return { ok: false, error: error.message };
+  }
+
+  if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}
+
+export async function deleteWorkoutSet(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+  const { error } = await (supabase.from('workout_exercise_sets') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}

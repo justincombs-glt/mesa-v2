@@ -80,6 +80,7 @@ function navForRole(role: AppRole): NavLink[] {
       return [
         home,
         { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
+        { href: '/dashboard/workout-plans', label: 'Workout Plans', icon: icons.practices },
         { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
         { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
         { href: '/dashboard/students', label: 'Students', icon: icons.family },

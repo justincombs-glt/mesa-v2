@@ -217,6 +217,9 @@ export interface WorkoutPlanItem {
   exercise_id: string;
   default_sets: number | null;
   default_reps: number | null;
+  default_weight_lbs: number | null;
+  default_duration_seconds: number | null;
+  default_rest_seconds: number | null;
   coach_notes: string | null;
   created_at: string;
 }
