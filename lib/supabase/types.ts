@@ -120,6 +120,32 @@ export interface PerformanceTest {
   created_at: string;
 }
 
+export interface CompositePerformanceTest {
+  id: string;
+  title: string;
+  description: string | null;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface CompositePerformanceTestItem {
+  id: string;
+  composite_id: string;
+  test_id: string;
+  sequence: number;
+  created_at: string;
+}
+
+export interface CPTSession {
+  id: string;
+  composite_id: string;
+  session_date: string;
+  administered_by: string | null;
+  conditions_notes: string | null;
+  created_at: string;
+}
+
 export interface PracticePlan {
   id: string;
   title: string;
@@ -256,6 +282,7 @@ export interface PerformanceTestResult {
   notes: string | null;
   is_baseline: boolean;
   context: string | null;
+  cpt_session_id: string | null;
 }
 
 export interface GoalPlan {

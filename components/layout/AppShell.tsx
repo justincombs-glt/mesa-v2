@@ -46,6 +46,7 @@ function navForRole(role: AppRole): NavLink[] {
         { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
         { href: '/dashboard/goal-templates', label: 'Goal Templates', icon: icons.goals },
         { href: '/dashboard/performance-tests', label: 'Performance Tests', icon: icons.tests },
+        { href: '/dashboard/composite-performance-tests', label: 'Composite Tests', icon: icons.performance },
         settings,
       ];
     case 'director':

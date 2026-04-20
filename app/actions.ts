@@ -347,3 +347,94 @@ export async function deletePerformanceTest(formData: FormData) {
   revalidatePath('/dashboard/performance-tests');
   return { ok: true };
 }
+
+// ============================================================================
+// Composite Performance Tests (CPTs) - admin + director
+// ============================================================================
+
+export async function createCompositeTest(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  // test_ids submitted as JSON array of { test_id, sequence }
+  const itemsRaw = String(formData.get('items') ?? '').trim();
+  let items: Array<{ test_id: string; sequence: number }> = [];
+  if (itemsRaw) {
+    try { items = JSON.parse(itemsRaw); } catch { return { ok: false, error: 'Could not parse items.' }; }
+  }
+
+  if (!title) return { ok: false, error: 'Title is required.' };
+  if (items.length === 0) return { ok: false, error: 'A composite test needs at least one individual test.' };
+
+  const { data: composite, error: cErr } = await (supabase.from('composite_performance_tests') as Any)
+    .insert({ title, description, created_by: user.id })
+    .select('id').single();
+
+  if (cErr || !composite) return { ok: false, error: cErr?.message ?? 'Could not create composite.' };
+  const composite_id = (composite as { id: string }).id;
+
+  const itemRows = items.map((i, idx) => ({
+    composite_id,
+    test_id: i.test_id,
+    sequence: i.sequence ?? idx,
+  }));
+
+  const { error: iErr } = await (supabase.from('composite_performance_test_items') as Any).insert(itemRows);
+  if (iErr) {
+    // Roll back the composite since items failed
+    await (supabase.from('composite_performance_tests') as Any).delete().eq('id', composite_id);
+    return { ok: false, error: iErr.message };
+  }
+
+  revalidatePath('/dashboard/composite-performance-tests');
+  return { ok: true, id: composite_id };
+}
+
+export async function updateCompositeTest(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim() || null;
+  const itemsRaw = String(formData.get('items') ?? '').trim();
+  let items: Array<{ test_id: string; sequence: number }> = [];
+  if (itemsRaw) {
+    try { items = JSON.parse(itemsRaw); } catch { return { ok: false, error: 'Could not parse items.' }; }
+  }
+
+  if (!id || !title) return { ok: false, error: 'Missing fields' };
+  if (items.length === 0) return { ok: false, error: 'A composite test needs at least one individual test.' };
+
+  const { error: uErr } = await (supabase.from('composite_performance_tests') as Any)
+    .update({ title, description }).eq('id', id);
+  if (uErr) return { ok: false, error: uErr.message };
+
+  // Replace items: delete all, insert fresh. Simpler and avoids tracking diffs client-side.
+  const { error: dErr } = await (supabase.from('composite_performance_test_items') as Any)
+    .delete().eq('composite_id', id);
+  if (dErr) return { ok: false, error: dErr.message };
+
+  const itemRows = items.map((i, idx) => ({
+    composite_id: id,
+    test_id: i.test_id,
+    sequence: i.sequence ?? idx,
+  }));
+
+  const { error: iErr } = await (supabase.from('composite_performance_test_items') as Any).insert(itemRows);
+  if (iErr) return { ok: false, error: iErr.message };
+
+  revalidatePath('/dashboard/composite-performance-tests');
+  revalidatePath(`/dashboard/composite-performance-tests/${id}`);
+  return { ok: true };
+}
+
+export async function deleteCompositeTest(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '');
+  const { error } = await (supabase.from('composite_performance_tests') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/composite-performance-tests');
+  return { ok: true };
+}

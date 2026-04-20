@@ -1,165 +1,146 @@
-# MESA v2 — Phase 2: Admin module
+# MESA v2 — Phase 2 + 2.5: Admin Module + Composite Tests
 
-Builds on Phase 1. Every admin sidebar item now works.
-
----
-
-## What's new in Phase 2
-
-### ✅ Users page (`/dashboard/users`)
-- Full user directory with search + role filter
-- Change any user's role from a dropdown (with confirmation)
-- Pending invites list at top with revoke option
-- Invite user modal — creates a pending invite that auto-assigns the role when the invited email signs up
-- Can't accidentally remove your own admin role (self-lockout prevention)
-
-### ✅ Drill Repository (`/dashboard/drills`)
-- Grid view of on-ice drills with category filter and search
-- Add / edit / delete drills
-- Category, duration, age groups, equipment, instructions
-
-### ✅ Exercise Repository (`/dashboard/exercises`) — NEW
-- Off-ice exercise library (trainer's side)
-- Same structure as drills but for strength/conditioning/mobility/plyometrics/skill/core/recovery
-- Default sets, reps, duration for timed exercises (e.g., plank)
-
-### ✅ Goal Template Repository (`/dashboard/goal-templates`)
-- Reusable goal examples (for when director builds student plans in Phase 3)
-- Domain tabs (On-Ice / Off-Ice / All)
-- Full 12-category taxonomy
-
-### ✅ Performance Test Repository (`/dashboard/performance-tests`) — NEW
-- Define standardized tests the academy administers
-- Domain (on-ice / off-ice), unit, direction (higher-is-better or lower-is-better)
-- Empty by default — you seed it with your own tests
+This zip contains everything from Phase 2 (Admin module) PLUS Phase 2.5 (Composite Performance Tests). Ship them together.
 
 ---
 
-## What's NOT in Phase 2
+## What's in this zip
 
-- Director module pages (Students, Practice Plans, Goal Management, Performance Management) — still stubs, arrive in Phase 3
-- Coach module (Practices, Activities, Students) — Phase 4
-- Trainer module (Workouts, etc.) — Phase 5
-- Student / Parent dashboards — Phase 6
+### Phase 2 features (unchanged from previous delivery)
+- **Users** — list, search, filter by role, change role, invite users, revoke invites
+- **Drills** — on-ice drill library with CRUD
+- **Exercises** — off-ice exercise library with CRUD (new in v2)
+- **Goal Templates** — goal template library with CRUD
+- **Performance Tests** — individual test definitions with unit + direction
 
----
-
-## No SQL migration needed
-
-All tables were created in Phase 1's migration. Pure code deploy this time.
-
----
-
-## Deployment
-
-1. Unzip `mesa-v2-phase2-clean.zip` on your Mac
-2. Go to your `mesa-2` GitHub repo → **Add file → Upload files**
-3. Drag the contents of the unzipped `mesa/` folder → it'll overwrite files from Phase 1
-4. Commit: `Phase 2 - Admin module`
-5. Vercel auto-deploys in ~90 seconds
-
-### If GitHub won't overwrite
-
-Sometimes GitHub's upload gets stuck when you overwrite many files. If it shows an error or just spins:
-
-1. Stop the upload
-2. Refresh the repo page
-3. Try uploading in smaller batches (e.g., just the `app/` folder, then `components/`, etc.)
-4. Or delete the old `app/dashboard/` folder first, then upload fresh
+### Phase 2.5 NEW: Composite Performance Tests
+- New sidebar item for admin: **Composite Tests** (`/dashboard/composite-performance-tests`)
+- A composite performance test (CPT) is a named, ordered bundle of individual tests
+- Examples: "Fall Baseline", "Pro Day", "Mid-Season Check"
+- CPT editor:
+  - Title + description
+  - Add individual tests from your existing repository
+  - Reorder with up/down arrows
+  - Remove with × button
+- Trainer workflow to actually *run* a CPT (record values for multiple students) comes in Phase 5 — this batch just sets up the definitions
 
 ---
 
-## Testing Phase 2
+## Deployment — migration runs first
 
-### Sign in as admin (you)
+### If you already deployed Phase 2
 
-1. Navigate to your Vercel URL → sign in
-2. Sidebar shows 7 items: Home, Users, Drills, Exercises, Goal Templates, Performance Tests, Profile
+The migration is additive (CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN IF NOT EXISTS). Safe to run against a Phase 2 database.
 
-### Test Users page
+### If you haven't deployed Phase 2 yet
 
-1. Click **Users** → see yourself in the list (role: admin)
-2. Click **Invite user** top-right
-3. Enter a test email + pick a role → Create invite
-4. New entry appears in "Pending invites" section
-5. Click **Revoke** → entry disappears
+You still only run the ONE migration. It piggybacks on Phase 1's schema.
 
-### Test creating a drill
+### Step 1 — Run the CPT migration
 
-1. Click **Drills** → empty state appears (expected — wiped DB)
-2. Click **Add drill** top-right
-3. Fill: title "Crossovers", category "skating", duration 15 → Save
-4. Drill appears as a card
-5. Click the card → modal opens for editing
-6. Try delete → confirms → drill gone
+1. Unzip `mesa-v2-phase2.5-clean.zip` on your Mac
+2. Supabase → SQL Editor → New query
+3. Open `supabase/migrations/0007_composite_performance_tests.sql`
+4. Copy all contents → paste → Run
+5. Expected: "Success. No rows returned." (some "already exists" notices are fine — idempotent)
 
-### Test creating an exercise
+Verify:
+```
+select
+  (select count(*) from public.composite_performance_tests) as cpt_count,
+  (select count(*) from information_schema.columns
+   where table_name = 'performance_test_results' and column_name = 'cpt_session_id') as new_column_exists;
+```
 
-1. Click **Exercises** → empty state
-2. Add exercise "Back Squat", category "strength", default sets 5, default reps 5 → Save
-3. Card appears with "5 × 5" in top-right
+Expected: `cpt_count = 0`, `new_column_exists = 1`.
 
-### Test creating a goal template
+### Step 2 — Upload code
 
-1. Click **Goal Templates** → empty
-2. Add template: "Crossovers under control", On-Ice, Skating, target 10, unit "crossovers", 8 weeks
-3. Card appears with domain pill and category label
-
-### Test creating a performance test
-
-1. Click **Performance Tests** → empty
-2. Add test: "40-yard dash", Off-Ice, unit "sec", Lower is better
-3. Add another: "1RM back squat", Off-Ice, unit "lb", Higher is better
-4. Both appear in the list
-
-### Test role change
-
-1. Users page → find a test user (if you have one) → change their role dropdown → confirm
-2. Or: create a test user in Supabase Auth → come back to Users → change their role
+GitHub → `mesa-2` repo → Add file → Upload files → drag contents of unzipped `mesa/` folder → commit "Phase 2 + 2.5"
 
 ---
 
-## Permissions at Phase 2
+## Testing the full delivery
+
+### Test 1 — Performance Test Library (Phase 2)
+
+As admin, sidebar **Performance Tests** → **Add test**:
+
+1. Title: `40-yard dash`, Domain: Off-Ice, Unit: `sec`, Direction: Lower is better
+2. Title: `1RM back squat`, Domain: Off-Ice, Unit: `lb`, Direction: Higher is better
+3. Title: `Vertical jump`, Domain: Off-Ice, Unit: `in`, Direction: Higher is better
+
+Three tests created. Now you're ready for a composite.
+
+### Test 2 — Create a Composite
+
+As admin, sidebar **Composite Tests** → **Add composite**:
+
+1. Title: `Fall Baseline`
+2. Description: `Pre-season testing across speed, strength, and power.`
+3. Add test from dropdown: 40-yard dash → appears as item 1
+4. Add test: 1RM back squat → item 2
+5. Add test: Vertical jump → item 3
+6. Use ↑/↓ arrows to reorder them however makes sense
+7. Click Create composite
+
+The CPT appears as a card on the Composite Tests page showing its 3 sub-tests.
+
+### Test 3 — Edit a Composite
+
+Click the card → modal opens in edit mode → reorder, add another test, remove one → Save. Changes persist.
+
+### Test 4 — Try to add a composite with no sub-tests
+
+You can't — the Create button is disabled until at least one test is selected. Error message shows if somehow bypassed.
+
+### Test 5 — Delete a Composite
+
+Edit a CPT → Delete button (bottom left) → confirms → gone from list. Individual sub-tests are NOT deleted (they remain in the Performance Tests library).
+
+---
+
+## Permissions at Phase 2 + 2.5
 
 | Action | Admin | Director | Coach | Trainer |
 |--------|-------|----------|-------|---------|
-| Access Users page | ✓ | — | — | — |
-| Change user roles | ✓ | — | — | — |
-| Create/revoke invites | ✓ | — | — | — |
-| Access Drills page | ✓ | ✓ | ✓ | — |
-| Manage drills | ✓ | ✓ | ✓ (own) | — |
-| Access Exercises page | ✓ | ✓ | — | ✓ |
-| Manage exercises | ✓ | ✓ | — | ✓ (own) |
-| Access Goal Templates | ✓ | ✓ | — | — |
-| Manage goal templates | ✓ | ✓ | — | — |
-| Access Performance Tests | ✓ | ✓ | — | — |
-| Manage performance tests | ✓ | ✓ | — | — |
+| View composite tests | ✓ | ✓ | ✓ | ✓ |
+| Create / edit / delete composites | ✓ | ✓ | — | — |
+| Administer a CPT session (record values) | ✓ | ✓ | — | ✓ |
 
-The Director sees some overlap (Drills, Exercises) because they'll use those repos in Phase 3 when building plans. Coaches can also contribute to Drills; Trainers can contribute to Exercises. The repo pages are shared — different roles see them via their respective sidebars.
+(Last row: session-recording UI lands in Phase 5 when we build the trainer workflow. Schema and permissions are in place; the UI just isn't built yet.)
+
+---
+
+## Schema added in Phase 2.5
+
+Three new tables:
+
+- `composite_performance_tests` — the CPT definition (title, description, etc.)
+- `composite_performance_test_items` — the ordered list of individual tests in each CPT
+- `cpt_sessions` — a recorded instance of running a CPT on a specific date (used by Phase 5 trainer UI)
+
+Plus one column:
+
+- `performance_test_results.cpt_session_id` — optional FK linking a result to a session. Null = ad-hoc. Set = recorded as part of a CPT session.
 
 ---
 
 ## What to report back
 
-- **"Phase 2 green, all 5 admin pages work, can create+edit+delete in each"** → Phase 3 (Director module)
-- **"Build error: [paste]"** → we fix
-- **"[Page] throws an error: [paste]"** → we fix
-- **"Works but [X] is wrong"** → feedback
+- **"Both pages work, created tests and a composite"** → Phase 3 begins
+- **"Migration error: [paste]"** → we fix SQL
+- **"Build error: [paste]"** → we debug
+- **"[Something] not working: [describe]"** → feedback
 
 ---
 
-## Common testing gotchas
+## What's next — Phase 3 (Director module)
 
-### "No matches" when I know I added something
+- Student directory + enrollment
+- Parent-linking workflow
+- Practice Plans (templates from drills + free-text skills)
+- Goal Management (plans, 1-3 goals per plan, linked tests, reviews)
+- Performance Management (read-only shell for now — cross-cutting activity view)
 
-- The repository filters by `active = true`. If you deleted and re-added, the active filter still lets through.
-- If you edited an item and the category changed, your filter might not match anymore. Clear the category filter.
-
-### Can't change my own role
-
-- Intentional — would lock you out. To demote yourself, first promote someone else to admin, have them change yours.
-
-### Invited user signs up but still gets "parent" role
-
-- Check the invite email exactly matches what they signed up with (lowercase, no trailing spaces, etc.)
-- Check `invites` table status — should flip to "consumed" on signup. If it's still "pending," the emails didn't match.
+Likely split into 3a + 3b because it's bigger than Phase 2.
