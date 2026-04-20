@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { updatePracticePlan, deletePracticePlan } from '@/app/actions';
+import { updatePracticePlan, deletePracticePlan, createDrill } from '@/app/actions';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import type { PracticePlan, Drill } from '@/lib/supabase/types';
@@ -306,30 +306,92 @@ export function PracticePlanEditorClient({ plan, initialItems, availableDrills }
 }
 
 function DrillPickerModal({ open, onClose, drills, onPick }: { open: boolean; onClose: () => void; drills: AvailableDrill[]; onPick: (d: AvailableDrill) => void }) {
+  const router = useRouter();
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<'pick' | 'create'>('pick');
+
   const filtered = drills.filter((d) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (d.title + ' ' + d.category).toLowerCase().includes(q);
   });
 
+  const handleClose = () => {
+    onClose();
+    // Reset state after close animation
+    setTimeout(() => { setMode('pick'); setQuery(''); }, 200);
+  };
+
+  const handleCreated = (newDrill: AvailableDrill) => {
+    // Add to plan
+    onPick(newDrill);
+    // Refresh server-side availableDrills list so it shows up if picker opens again
+    router.refresh();
+    // Close modal (onPick also closes but the timing of router.refresh means we explicitly do this too)
+    setMode('pick');
+  };
+
+  if (mode === 'create') {
+    return (
+      <Modal open={open} onClose={handleClose} title="New drill" description="Adds to your drill library AND to this plan as the next item." maxWidth="540px">
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setMode('pick')}
+            className="text-xs font-mono uppercase tracking-wider text-ink-faint hover:text-ink flex items-center gap-1.5"
+          >
+            ← Back to picker
+          </button>
+        </div>
+        <CreateDrillForm onCreated={handleCreated} onCancel={handleClose} />
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Add a drill" description="Pick from your drill library." maxWidth="540px">
+    <Modal open={open} onClose={handleClose} title="Add a drill" description="Pick from your drill library, or create a new one." maxWidth="540px">
       <div className="flex flex-col gap-3">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search drills…"
-          className="input-base"
-        />
+        <div className="flex gap-2">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search drills…"
+            className="input-base flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => setMode('create')}
+            className="btn-secondary !h-10 !px-3 text-[13px] whitespace-nowrap"
+          >
+            + New
+          </button>
+        </div>
 
         {drills.length === 0 ? (
-          <div className="text-sm text-ink-dim p-6 text-center">
-            No drills in the library yet. <a href="/dashboard/drills" className="text-crimson font-medium">Add some first.</a>
+          <div className="card-base p-6 text-center">
+            <p className="text-sm text-ink-dim mb-4">
+              No drills in the library yet.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMode('create')}
+              className="btn-primary !h-10 text-[13px]"
+            >
+              Create your first drill
+            </button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-sm text-ink-dim p-4 text-center">No matches.</div>
+          <div className="card-base p-4 text-center">
+            <p className="text-sm text-ink-dim mb-3">No matches.</p>
+            <button
+              type="button"
+              onClick={() => setMode('create')}
+              className="text-xs font-mono uppercase tracking-wider text-crimson hover:text-crimson-dark"
+            >
+              + Create a new drill
+            </button>
+          </div>
         ) : (
           <div className="card-base overflow-hidden max-h-[50vh] overflow-y-auto">
             {filtered.map((d, idx) => (
@@ -352,6 +414,85 @@ function DrillPickerModal({ open, onClose, drills, onPick }: { open: boolean; on
         )}
       </div>
     </Modal>
+  );
+}
+
+function CreateDrillForm({ onCreated, onCancel }: { onCreated: (drill: AvailableDrill) => void; onCancel: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const CATEGORIES = ['skating', 'passing', 'shooting', 'stickhandling', 'defense', 'goalie', 'small_area', 'conditioning', 'warmup'];
+
+  const handleSubmit = async (fd: FormData) => {
+    setSaving(true);
+    setError(null);
+
+    const title = String(fd.get('title') ?? '').trim();
+    const category = String(fd.get('category') ?? '').trim();
+    const duration_str = String(fd.get('duration_minutes') ?? '').trim();
+    const duration_minutes = duration_str ? parseInt(duration_str, 10) : null;
+
+    const res = await createDrill(fd);
+    setSaving(false);
+
+    if (res.ok && res.id) {
+      // Hand the caller the new drill as AvailableDrill shape
+      onCreated({
+        id: res.id,
+        title,
+        category,
+        duration_minutes,
+      });
+    } else {
+      setError(res.error ?? 'Could not create drill.');
+    }
+  };
+
+  return (
+    <form action={handleSubmit} className="flex flex-col gap-4">
+      <FormField label="Title" required>
+        <input type="text" name="title" required placeholder="e.g. Crossovers" className="input-base" autoFocus />
+      </FormField>
+
+      <FormField label="Category" required>
+        <select name="category" required defaultValue="" className="input-base capitalize">
+          <option value="" disabled>Choose&hellip;</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c} className="capitalize">{c.replace('_', ' ')}</option>
+          ))}
+        </select>
+      </FormField>
+
+      <FormField label="Description">
+        <textarea name="description" rows={2} className="input-base resize-none" />
+      </FormField>
+
+      <FormField label="Instructions">
+        <textarea name="instructions" rows={3} className="input-base resize-none" />
+      </FormField>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Duration (min)">
+          <input type="number" name="duration_minutes" min="1" max="90" placeholder="15" className="input-base" />
+        </FormField>
+        <FormField label="Age groups" help="Comma-separated">
+          <input type="text" name="age_groups" placeholder="U12, U14" className="input-base" />
+        </FormField>
+      </div>
+
+      <FormField label="Equipment" help="Comma-separated">
+        <input type="text" name="equipment" placeholder="pucks, cones" className="input-base" />
+      </FormField>
+
+      {error && <div className="text-sm text-crimson">{error}</div>}
+
+      <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
+        <button type="button" onClick={onCancel} className="btn-secondary !h-10 text-[13px]">Cancel</button>
+        <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
+          {saving ? 'Creating\u2026' : 'Create & add to plan'}
+        </button>
+      </div>
+    </form>
   );
 }
 
