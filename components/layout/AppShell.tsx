@@ -89,8 +89,8 @@ function navForRole(role: AppRole): NavLink[] {
     case 'student':
       return [
         home,
-        { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
-        { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
+        { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
+        { href: '/dashboard/my-performance', label: 'My Performance', icon: icons.performance },
         settings,
       ];
     case 'parent':
