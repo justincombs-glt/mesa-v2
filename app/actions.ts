@@ -94,7 +94,7 @@ export async function createInvite(formData: FormData) {
   }
 
   const { error } = await (supabase.from('invites') as Any).insert({
-    email, role, note, invited_by: user.id,
+    email, role, note, linked_student_id, invited_by: user.id,
   });
 
   if (error) return { ok: false, error: error.message };

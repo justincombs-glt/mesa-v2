@@ -89,6 +89,7 @@ export interface Invite {
   note: string | null;
   invited_by: string | null;
   consumed_at: string | null;
+  linked_student_id: string | null;
   created_at: string;
 }
 
