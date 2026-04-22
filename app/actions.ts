@@ -66,11 +66,32 @@ export async function createInvite(formData: FormData) {
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const role = String(formData.get('role') ?? '').trim() as AppRole;
   const note = String(formData.get('note') ?? '').trim() || null;
+  const linked_student_id = String(formData.get('linked_student_id') ?? '').trim() || null;
 
   if (!email || !role) return { ok: false, error: 'Email and role are required.' };
 
   const validRoles: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent'];
   if (!validRoles.includes(role)) return { ok: false, error: 'Invalid role' };
+
+  // Age gate: sub-13 students cannot have their own login account (Q2 = C)
+  if (role === 'student' && linked_student_id) {
+    const { data: studentRow } = await supabase
+      .from('students').select('date_of_birth, full_name').eq('id', linked_student_id).single();
+    if (studentRow) {
+      const s = studentRow as { date_of_birth: string | null; full_name: string };
+      if (s.date_of_birth) {
+        const dob = new Date(s.date_of_birth);
+        const thirteenYearsAgo = new Date();
+        thirteenYearsAgo.setFullYear(thirteenYearsAgo.getFullYear() - 13);
+        if (dob > thirteenYearsAgo) {
+          return {
+            ok: false,
+            error: `${s.full_name} is under 13. Minor students can't have their own login account — link a parent instead.`,
+          };
+        }
+      }
+    }
+  }
 
   const { error } = await (supabase.from('invites') as Any).insert({
     email, role, note, invited_by: user.id,
@@ -516,6 +537,24 @@ export async function linkStudentProfile(formData: FormData) {
   const profile_email = String(formData.get('profile_email') ?? '').trim().toLowerCase();
 
   if (!student_id || !profile_email) return { ok: false, error: 'Missing fields' };
+
+  // Age gate: sub-13 students cannot have their own login account (Q2 = C)
+  const { data: studentRow } = await supabase
+    .from('students').select('date_of_birth, full_name').eq('id', student_id).single();
+  if (studentRow) {
+    const s = studentRow as { date_of_birth: string | null; full_name: string };
+    if (s.date_of_birth) {
+      const dob = new Date(s.date_of_birth);
+      const thirteenYearsAgo = new Date();
+      thirteenYearsAgo.setFullYear(thirteenYearsAgo.getFullYear() - 13);
+      if (dob > thirteenYearsAgo) {
+        return {
+          ok: false,
+          error: `${s.full_name} is under 13. Minor students can't have their own login account — link a parent to the student record instead.`,
+        };
+      }
+    }
+  }
 
   const { data: profileRow } = await supabase
     .from('profiles').select('id, role').eq('email', profile_email).single();

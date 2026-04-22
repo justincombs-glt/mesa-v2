@@ -1,20 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createInvite, revokeInvite } from '@/app/actions';
 import { toFormAction } from '@/lib/form-helpers';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
-import type { Invite, AppRole } from '@/lib/supabase/types';
+import type { Invite, AppRole, Student } from '@/lib/supabase/types';
 
 const ROLES: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent'];
 
+type StudentLite = Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'date_of_birth' | 'profile_id' | 'active'>;
+
 interface Props {
   pending: Invite[];
+  students: StudentLite[];
   addOnly?: boolean;
 }
 
-export function InviteClient({ pending, addOnly }: Props) {
+export function InviteClient({ pending, students, addOnly }: Props) {
   const [open, setOpen] = useState(false);
 
   if (addOnly) {
@@ -26,7 +29,7 @@ export function InviteClient({ pending, addOnly }: Props) {
           </svg>
           Send invite
         </button>
-        <InviteFormModal open={open} onClose={() => setOpen(false)} />
+        <InviteFormModal open={open} onClose={() => setOpen(false)} students={students} />
       </>
     );
   }
@@ -67,15 +70,33 @@ export function InviteClient({ pending, addOnly }: Props) {
         </div>
       )}
 
-      <InviteFormModal open={open} onClose={() => setOpen(false)} />
+      <InviteFormModal open={open} onClose={() => setOpen(false)} students={students} />
     </>
   );
 }
 
-function InviteFormModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function isUnder13(dob: string | null): boolean {
+  if (!dob) return false;
+  const d = new Date(dob);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 13);
+  return d > cutoff;
+}
+
+function InviteFormModal({ open, onClose, students }: {
+  open: boolean; onClose: () => void; students: StudentLite[];
+}) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [role, setRole] = useState<string>('');
+  const [linkedStudentId, setLinkedStudentId] = useState<string>('');
+
+  const selectedStudent = useMemo(
+    () => students.find((s) => s.id === linkedStudentId) ?? null,
+    [linkedStudentId, students],
+  );
+  const selectedIsMinor = selectedStudent ? isUnder13(selectedStudent.date_of_birth) : false;
 
   const handleSubmit = async (formData: FormData) => {
     setSaving(true);
@@ -85,7 +106,7 @@ function InviteFormModal({ open, onClose }: { open: boolean; onClose: () => void
     setSaving(false);
     if (res.ok) {
       setSuccess('Invite created. The role will be assigned automatically when they sign up with this email.');
-      setTimeout(() => { setSuccess(null); onClose(); }, 3000);
+      setTimeout(() => { setSuccess(null); setRole(''); setLinkedStudentId(''); onClose(); }, 3000);
     } else {
       setError(res.error ?? 'Something went wrong.');
     }
@@ -98,11 +119,38 @@ function InviteFormModal({ open, onClose }: { open: boolean; onClose: () => void
           <input type="email" name="email" required placeholder="person@example.com" className="input-base" />
         </FormField>
         <FormField label="Role" required>
-          <select name="role" required defaultValue="" className="input-base capitalize">
-            <option value="" disabled>Choose a role&hellip;</option>
+          <select name="role" required value={role} onChange={(e) => setRole(e.target.value)} className="input-base capitalize">
+            <option value="" disabled>Choose a role…</option>
             {ROLES.map((r) => <option key={r} value={r} className="capitalize">{r}</option>)}
           </select>
         </FormField>
+
+        {role === 'student' && (
+          <FormField
+            label="Link to student record"
+            help="Optional. Pick which student record this account represents. Required when enforcing the 13+ age rule.">
+            <select name="linked_student_id" value={linkedStudentId} onChange={(e) => setLinkedStudentId(e.target.value)} className="input-base">
+              <option value="">— Not linked —</option>
+              {students.map((s) => {
+                const minor = isUnder13(s.date_of_birth);
+                return (
+                  <option key={s.id} value={s.id} disabled={minor}>
+                    {s.full_name}
+                    {s.jersey_number ? ` · #${s.jersey_number}` : ''}
+                    {minor ? ' (under 13 — not eligible)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </FormField>
+        )}
+
+        {role === 'student' && selectedIsMinor && (
+          <div className="text-sm text-crimson bg-crimson/10 border border-crimson/30 rounded p-3">
+            {selectedStudent?.full_name} is under 13. Minor students can&apos;t have their own login account. Link a parent to the student record instead.
+          </div>
+        )}
+
         <FormField label="Note" help="Optional. For your reference only.">
           <input type="text" name="note" placeholder="e.g. U14 head coach" className="input-base" />
         </FormField>
@@ -112,8 +160,9 @@ function InviteFormModal({ open, onClose }: { open: boolean; onClose: () => void
 
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
-            {saving ? 'Sending\u2026' : 'Send invite'}
+          <button type="submit" disabled={saving || (role === 'student' && selectedIsMinor)}
+            className="btn-primary !h-10 text-[13px] disabled:opacity-50 disabled:cursor-not-allowed">
+            {saving ? 'Sending…' : 'Send invite'}
           </button>
         </div>
       </form>
