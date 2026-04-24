@@ -3,6 +3,7 @@ import { requireProfile, displayNameOf } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StudentDashboardView } from '@/components/student/StudentDashboardView';
+import { AddChildButton } from './family/AddChildButton';
 import {
   getLinkedStudentForProfile,
   getLinkedStudentsForParent,
@@ -90,12 +91,13 @@ async function ParentHome({ profileId, profileName }: { profileId: string; profi
         <PageHeader
           kicker="Parent"
           title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
-          description="No linked students yet."
+          description="Add your first child to get started."
         />
         <div className="card-base p-8 text-center">
-          <p className="text-sm text-ink-dim max-w-md mx-auto">
-            Your account isn&apos;t linked to any students yet. Ask the academy to link your child&apos;s record to your parent account. Once linked, each of them will appear below with their progress.
+          <p className="text-sm text-ink-dim max-w-md mx-auto mb-5">
+            Register your child with the academy by adding them below. Once created, you&apos;ll see their goals, schedule, and progress here.
           </p>
+          <AddChildButton variant="primary" label="Add my first child" />
         </div>
       </>
     );
@@ -124,6 +126,7 @@ async function ParentHome({ profileId, profileName }: { profileId: string; profi
         description={students.length === 1
           ? 'Your linked student — click through to see their progress.'
           : `Your ${students.length} linked students — click any to see their progress.`}
+        actions={<AddChildButton />}
       />
       <div className="card-base overflow-hidden">
         {enriched.map((row, idx) => (

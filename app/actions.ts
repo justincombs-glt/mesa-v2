@@ -485,8 +485,19 @@ export async function createStudent(formData: FormData) {
     .select('id').single();
 
   if (error) return { ok: false, error: error.message };
+  const studentId = (data as { id: string }).id;
+
+  // Auto-enroll in current season (Q9 = A from Phase 3.5)
+  const { data: currentSeason } = await supabase
+    .from('seasons').select('id').eq('is_current', true).maybeSingle();
+  if (currentSeason) {
+    const seasonId = (currentSeason as { id: string }).id;
+    await (supabase.from('season_enrollments') as Any)
+      .insert({ season_id: seasonId, student_id: studentId });
+  }
+
   revalidatePath('/dashboard/students');
-  return { ok: true, id: (data as { id: string }).id };
+  return { ok: true, id: studentId };
 }
 
 export async function updateStudent(formData: FormData) {
@@ -593,8 +604,13 @@ export async function linkParent(formData: FormData) {
   const supabase = createClient();
   const student_id = String(formData.get('student_id') ?? '').trim();
   const parent_email = String(formData.get('parent_email') ?? '').trim().toLowerCase();
-  const relationship = String(formData.get('relationship') ?? 'guardian').trim() || 'guardian';
+  const relationship_raw = String(formData.get('relationship') ?? 'guardian').trim() || 'guardian';
+  const relationship_other = String(formData.get('relationship_other') ?? '').trim() || null;
   const is_primary = formData.get('is_primary') === 'on';
+
+  const relationship = relationship_raw === 'other'
+    ? (relationship_other || 'Other')
+    : relationship_raw;
 
   if (!student_id || !parent_email) return { ok: false, error: 'Missing fields' };
 
@@ -2003,5 +2019,114 @@ export async function deleteWorkoutSet(formData: FormData) {
   const { error } = await (supabase.from('workout_exercise_sets') as Any).delete().eq('id', id);
   if (error) return { ok: false, error: error.message };
   if (activity_id) revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6b: Parent-adds-child + multi-parent management
+// ---------------------------------------------------------------------------
+
+/**
+ * Parent-creates-child: parent self-registers a new student record linked
+ * to their profile. Handles duplicate detection (Q5 = B) and auto-enrollment
+ * in the current season (Q3 = A).
+ */
+export async function createStudentAsParent(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  // Verify caller is a parent
+  const { data: profileRow } = await supabase
+    .from('profiles').select('role').eq('id', user.id).single();
+  if (!profileRow || (profileRow as { role: string }).role !== 'parent') {
+    return { ok: false, error: 'Only parents can use this flow.' };
+  }
+
+  const full_name = String(formData.get('full_name') ?? '').trim();
+  const date_of_birth = String(formData.get('date_of_birth') ?? '').trim() || null;
+  const jersey_number = String(formData.get('jersey_number') ?? '').trim() || null;
+  const position = (String(formData.get('position') ?? '').trim() || null) as 'F' | 'D' | 'G' | null;
+  const dominant_hand = (String(formData.get('dominant_hand') ?? '').trim() || null) as 'L' | 'R' | null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const relationship = String(formData.get('relationship') ?? '').trim() || null;
+  const relationship_other = String(formData.get('relationship_other') ?? '').trim() || null;
+
+  if (!full_name) return { ok: false, error: "Your child's name is required." };
+  if (!date_of_birth) return { ok: false, error: "Your child's date of birth is required." };
+
+  // Duplicate detection (Q5 = B): check existing students by case-insensitive
+  // name + exact DOB match
+  const { data: dupRows } = await supabase
+    .from('students').select('id, full_name, date_of_birth')
+    .eq('date_of_birth', date_of_birth);
+  const dupes = (dupRows ?? []) as Array<{ id: string; full_name: string; date_of_birth: string }>;
+  const lowerName = full_name.toLowerCase();
+  const match = dupes.find((s) => s.full_name.toLowerCase() === lowerName);
+  if (match) {
+    return {
+      ok: false,
+      error: `A student named "${match.full_name}" with that birthday already exists. Please contact the academy to have your account linked to that existing record instead of creating a new one.`,
+    };
+  }
+
+  // Resolve relationship label
+  const finalRelationship = relationship === 'other'
+    ? (relationship_other || 'Other')
+    : relationship;
+
+  // Insert the student
+  const { data: studentData, error: studentErr } = await (supabase.from('students') as Any)
+    .insert({ full_name, date_of_birth, jersey_number, position, dominant_hand, notes })
+    .select('id').single();
+  if (studentErr || !studentData) {
+    return { ok: false, error: studentErr?.message ?? 'Could not create student.' };
+  }
+  const studentId = (studentData as { id: string }).id;
+
+  // Insert the family link
+  const { error: linkErr } = await (supabase.from('family_links') as Any).insert({
+    parent_id: user.id,
+    student_id: studentId,
+    relationship: finalRelationship,
+  });
+  if (linkErr) {
+    // Try to clean up the orphaned student record
+    await (supabase.from('students') as Any).delete().eq('id', studentId);
+    return { ok: false, error: `Could not link you to this student: ${linkErr.message}` };
+  }
+
+  // Auto-enroll in current season (Q3 = A)
+  const { data: currentSeason } = await supabase
+    .from('seasons').select('id').eq('is_current', true).maybeSingle();
+  if (currentSeason) {
+    const seasonId = (currentSeason as { id: string }).id;
+    await (supabase.from('season_enrollments') as Any)
+      .insert({ season_id: seasonId, student_id: studentId });
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/family');
+  return { ok: true, id: studentId };
+}
+
+/**
+ * Admin/director: updates the relationship label on an existing family_link.
+ */
+export async function updateFamilyLinkRelationship(formData: FormData) {
+  const supabase = createClient();
+  const id = String(formData.get('id') ?? '').trim();
+  const relationship = String(formData.get('relationship') ?? '').trim() || null;
+  const relationship_other = String(formData.get('relationship_other') ?? '').trim() || null;
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  const finalRelationship = relationship === 'other'
+    ? (relationship_other || 'Other')
+    : relationship;
+
+  const { error } = await (supabase.from('family_links') as Any)
+    .update({ relationship: finalRelationship }).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/students');
   return { ok: true };
 }

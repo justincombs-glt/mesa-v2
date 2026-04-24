@@ -3,6 +3,7 @@ import { requireProfile, displayNameOf } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getLinkedStudentsForParent } from '@/lib/student-dashboard';
+import { AddChildButton } from './AddChildButton';
 import type { Student } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
@@ -26,17 +27,29 @@ export default async function FamilyPage() {
   const students = await getLinkedStudentsForParent(profile.id);
 
   if (students.length === 0) {
+    const isParent = profile.role === 'parent';
     return (
       <>
         <PageHeader
           kicker="Family"
           title={<>My <em className="italic text-crimson">family</em>.</>}
-          description="No students linked to your account yet."
+          description={isParent
+            ? "Add your first child to get started."
+            : "No students linked to this account."}
         />
         <div className="card-base p-8 text-center">
-          <p className="text-sm text-ink-dim max-w-md mx-auto">
-            Your account isn&apos;t linked to any students yet. Ask the academy to link your child&apos;s record to your parent account. Once linked, each of your children will appear here.
-          </p>
+          {isParent ? (
+            <>
+              <p className="text-sm text-ink-dim max-w-md mx-auto mb-5">
+                Register your child with the academy by adding them below. They&apos;ll immediately be visible to coaches, trainers, and administrators.
+              </p>
+              <AddChildButton variant="primary" label="Add my first child" />
+            </>
+          ) : (
+            <p className="text-sm text-ink-dim max-w-md mx-auto">
+              Your account isn&apos;t linked to any students yet. Ask the academy to link your child&apos;s record to your parent account. Once linked, each of your children will appear here.
+            </p>
+          )}
         </div>
       </>
     );
@@ -65,6 +78,7 @@ export default async function FamilyPage() {
         description={students.length === 1
           ? "Click through to see their goals, schedule, and performance."
           : `Your ${students.length} linked students — click any to see their progress.`}
+        actions={profile.role === 'parent' ? <AddChildButton /> : undefined}
       />
       <div className="card-base overflow-hidden">
         {enriched.map((row, idx) => (

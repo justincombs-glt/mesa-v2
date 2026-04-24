@@ -227,6 +227,7 @@ function StudentLoginSection({ student, linkedStudentProfile }: { student: Stude
 function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose: () => void; student: Student }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [relationship, setRelationship] = useState<string>('guardian');
 
   const handleSubmit = async (formData: FormData) => {
     formData.set('student_id', student.id);
@@ -246,13 +247,20 @@ function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose
         </FormField>
 
         <FormField label="Relationship">
-          <select name="relationship" defaultValue="guardian" className="input-base">
+          <select name="relationship" value={relationship} onChange={(e) => setRelationship(e.target.value)} className="input-base">
             <option value="mother">Mother</option>
             <option value="father">Father</option>
             <option value="guardian">Guardian</option>
-            <option value="other">Other</option>
+            <option value="grandparent">Grandparent</option>
+            <option value="other">Other…</option>
           </select>
         </FormField>
+
+        {relationship === 'other' && (
+          <FormField label="Relationship — specify">
+            <input type="text" name="relationship_other" placeholder="e.g. Step-parent, Aunt, Uncle" className="input-base" />
+          </FormField>
+        )}
 
         <label className="flex items-center gap-2.5 text-sm text-ink">
           <input type="checkbox" name="is_primary" className="w-4 h-4 accent-ink" />
@@ -264,7 +272,7 @@ function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
           <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
-            {saving ? 'Linking\u2026' : 'Link parent'}
+            {saving ? 'Linking…' : 'Link parent'}
           </button>
         </div>
       </form>
