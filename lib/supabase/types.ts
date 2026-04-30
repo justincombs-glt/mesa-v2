@@ -345,6 +345,8 @@ export interface GoalPlanGoal {
   category: GoalCategory | null;
   target_value: string | null;
   target_unit: string | null;
+  target_numeric: number | null;
+  linked_test_id: string | null;
   current_value: string | null;
   progress_pct: number;
   due_date: string | null;

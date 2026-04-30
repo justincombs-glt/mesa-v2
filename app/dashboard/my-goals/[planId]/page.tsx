@@ -139,6 +139,7 @@ export default async function MyPlanDetailPage({ params }: { params: { planId: s
         availableComposites={[]}
         reviews={reviews}
         templates={templates}
+        tests={[]}
         readOnly={true}
       />
     </>

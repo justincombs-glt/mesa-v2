@@ -16,7 +16,7 @@ import {
 } from '@/lib/goal-taxonomy';
 import type {
   GoalPlan, GoalPlanGoal, Review, CompositePerformanceTest, GoalTemplate,
-  GoalDomain, GoalCategory, GoalPlanStatus,
+  GoalDomain, GoalCategory, GoalPlanStatus, PerformanceTest,
 } from '@/lib/supabase/types';
 import type { AttachedComposite } from './page';
 
@@ -29,16 +29,17 @@ interface Props {
   availableComposites: CompositePerformanceTest[];
   reviews: Review[];
   templates: GoalTemplate[];
+  tests: PerformanceTest[];
   readOnly: boolean;
 }
 
 export function PlanDetailClient(props: Props) {
-  const { plan, goals, attachedComposites, availableComposites, reviews, templates, readOnly } = props;
+  const { plan, goals, attachedComposites, availableComposites, reviews, templates, tests, readOnly } = props;
 
   return (
     <div className="flex flex-col gap-10">
       <PlanMetaSection plan={plan} readOnly={readOnly} />
-      <GoalsSection plan={plan} goals={goals} templates={templates} readOnly={readOnly} />
+      <GoalsSection plan={plan} goals={goals} templates={templates} tests={tests} readOnly={readOnly} />
       <CompositesSection plan={plan} attachedComposites={attachedComposites} availableComposites={availableComposites} readOnly={readOnly} />
       <ReviewsSection plan={plan} reviews={reviews} readOnly={readOnly} />
     </div>
@@ -148,7 +149,7 @@ function PlanMetaSection({ plan, readOnly }: { plan: GoalPlan; readOnly: boolean
 // Goals section
 // ----------------------------------------------------------------------------
 
-function GoalsSection({ plan, goals, templates, readOnly }: { plan: GoalPlan; goals: GoalPlanGoal[]; templates: GoalTemplate[]; readOnly: boolean }) {
+function GoalsSection({ plan, goals, templates, tests, readOnly }: { plan: GoalPlan; goals: GoalPlanGoal[]; templates: GoalTemplate[]; tests: PerformanceTest[]; readOnly: boolean }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalPlanGoal | null>(null);
 
@@ -234,8 +235,8 @@ function GoalsSection({ plan, goals, templates, readOnly }: { plan: GoalPlan; go
         </div>
       )}
 
-      <AddGoalModal open={addOpen} onClose={() => setAddOpen(false)} plan={plan} templates={templates} nextSequence={goals.length + 1} />
-      <EditGoalModal open={editingGoal !== null} onClose={() => setEditingGoal(null)} goal={editingGoal} planId={plan.id} />
+      <AddGoalModal open={addOpen} onClose={() => setAddOpen(false)} plan={plan} templates={templates} tests={tests} nextSequence={goals.length + 1} />
+      <EditGoalModal open={editingGoal !== null} onClose={() => setEditingGoal(null)} goal={editingGoal} planId={plan.id} tests={tests} />
     </section>
   );
 }
@@ -253,8 +254,8 @@ function GoalStatusPill({ status }: { status: string }) {
   );
 }
 
-function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
-  open: boolean; onClose: () => void; plan: GoalPlan; templates: GoalTemplate[]; nextSequence: number;
+function AddGoalModal({ open, onClose, plan, templates, tests, nextSequence }: {
+  open: boolean; onClose: () => void; plan: GoalPlan; templates: GoalTemplate[]; tests: PerformanceTest[]; nextSequence: number;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -344,6 +345,26 @@ function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
           </FormField>
         </div>
 
+        <div className="border-t border-ink-hair pt-4">
+          <div className="kicker mb-2">Auto-track via test (optional)</div>
+          <p className="text-xs text-ink-faint mb-3">
+            Link this goal to a performance test to compute progress automatically. Leave blank for goals that aren&apos;t numerically measurable.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Linked test">
+              <select name="linked_test_id" defaultValue="" className="input-base">
+                <option value="">— none —</option>
+                {tests.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}{t.unit ? ` (${t.unit})` : ''}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Numeric target" help="The target value the test should reach.">
+              <input type="number" step="0.01" name="target_numeric" placeholder="e.g. 24" className="input-base" />
+            </FormField>
+          </div>
+        </div>
+
         {error && <div className="text-sm text-crimson">{error}</div>}
 
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
@@ -357,8 +378,8 @@ function AddGoalModal({ open, onClose, plan, templates, nextSequence }: {
   );
 }
 
-function EditGoalModal({ open, onClose, goal, planId }: {
-  open: boolean; onClose: () => void; goal: GoalPlanGoal | null; planId: string;
+function EditGoalModal({ open, onClose, goal, planId, tests }: {
+  open: boolean; onClose: () => void; goal: GoalPlanGoal | null; planId: string; tests: PerformanceTest[];
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -415,6 +436,26 @@ function EditGoalModal({ open, onClose, goal, planId }: {
           <FormField label="Due date">
             <input type="date" name="due_date" defaultValue={goal.due_date ?? ''} className="input-base" />
           </FormField>
+        </div>
+
+        <div className="border-t border-ink-hair pt-4">
+          <div className="kicker mb-2">Auto-track via test (optional)</div>
+          <p className="text-xs text-ink-faint mb-3">
+            Link this goal to a performance test to compute progress automatically. The auto-computed value will override the manual progress % above.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Linked test">
+              <select name="linked_test_id" defaultValue={goal.linked_test_id ?? ''} className="input-base">
+                <option value="">— none —</option>
+                {tests.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}{t.unit ? ` (${t.unit})` : ''}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Numeric target">
+              <input type="number" step="0.01" name="target_numeric" defaultValue={goal.target_numeric ?? ''} className="input-base" />
+            </FormField>
+          </div>
         </div>
 
         <FormField label="Status" required>

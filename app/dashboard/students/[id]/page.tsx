@@ -71,6 +71,12 @@ export default async function StudentAdminPage({ params }: { params: { id: strin
           </>
         }
         description="Edit student details, manage parent links, and link a student account."
+        actions={
+          <Link href={`/dashboard/students/${student.id}/insights`}
+            className="btn-secondary !h-10 !px-4 text-[13px]">
+            View insights →
+          </Link>
+        }
       />
 
       <StudentAdminClient

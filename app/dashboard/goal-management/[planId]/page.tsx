@@ -149,6 +149,11 @@ export default async function PlanDetailPage({ params }: { params: { planId: str
     .from('goal_templates').select('*').eq('active', true).order('title');
   const templates = (templateRows ?? []) as GoalTemplate[];
 
+  // Performance tests for goal-test linkage picker (Phase 7a)
+  const { data: testRows } = await supabase
+    .from('performance_tests').select('*').eq('active', true).order('title');
+  const tests = (testRows ?? []) as PerformanceTest[];
+
   return (
     <>
       <PageHeader
@@ -176,6 +181,7 @@ export default async function PlanDetailPage({ params }: { params: { planId: str
         availableComposites={availableComposites}
         reviews={reviews}
         templates={templates}
+        tests={tests}
         readOnly={seasonCtx.isArchived}
       />
     </>

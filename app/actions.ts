@@ -837,6 +837,9 @@ export async function createGoalInPlan(formData: FormData) {
   const category = String(formData.get('category') ?? '').trim() || null;
   const target_value = String(formData.get('target_value') ?? '').trim() || null;
   const target_unit = String(formData.get('target_unit') ?? '').trim() || null;
+  const target_num_str = String(formData.get('target_numeric') ?? '').trim();
+  const target_numeric = target_num_str ? parseFloat(target_num_str) : null;
+  const linked_test_id = String(formData.get('linked_test_id') ?? '').trim() || null;
   const due_date = String(formData.get('due_date') ?? '').trim() || null;
   const seq_str = String(formData.get('sequence') ?? '').trim();
   const sequence = seq_str ? parseInt(seq_str, 10) : 1;
@@ -845,7 +848,8 @@ export async function createGoalInPlan(formData: FormData) {
 
   const { error } = await (supabase.from('goal_plan_goals') as Any).insert({
     plan_id, template_id, title, description, domain, category,
-    target_value, target_unit, due_date, sequence, status: 'active',
+    target_value, target_unit, target_numeric, linked_test_id,
+    due_date, sequence, status: 'active',
   });
 
   if (error) return { ok: false, error: error.message };
@@ -861,6 +865,9 @@ export async function updateGoalInPlan(formData: FormData) {
   const description = String(formData.get('description') ?? '').trim() || null;
   const target_value = String(formData.get('target_value') ?? '').trim() || null;
   const target_unit = String(formData.get('target_unit') ?? '').trim() || null;
+  const target_num_str = String(formData.get('target_numeric') ?? '').trim();
+  const target_numeric = target_num_str ? parseFloat(target_num_str) : null;
+  const linked_test_id = String(formData.get('linked_test_id') ?? '').trim() || null;
   const current_value = String(formData.get('current_value') ?? '').trim() || null;
   const progress_str = String(formData.get('progress_pct') ?? '').trim();
   const progress_pct = progress_str ? Math.min(100, Math.max(0, parseInt(progress_str, 10))) : 0;
@@ -871,8 +878,8 @@ export async function updateGoalInPlan(formData: FormData) {
   if (!id || !title) return { ok: false, error: 'Missing fields' };
 
   const { error } = await (supabase.from('goal_plan_goals') as Any).update({
-    title, description, target_value, target_unit, current_value,
-    progress_pct, due_date, status, achieved_at,
+    title, description, target_value, target_unit, target_numeric, linked_test_id,
+    current_value, progress_pct, due_date, status, achieved_at,
   }).eq('id', id);
 
   if (error) return { ok: false, error: error.message };
