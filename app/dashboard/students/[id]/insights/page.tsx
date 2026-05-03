@@ -1,17 +1,19 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/server';
 import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { InsightsView } from '@/components/insights/InsightsView';
 import { buildStudentInsights } from '@/lib/student-insights';
+import type { Review } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
 
 export default async function StudentInsightsPage({ params }: { params: { id: string } }) {
-  // Q7 = B: all staff can view insights
   await requireRole('admin', 'director', 'coach', 'trainer');
   const seasonCtx = await getSeasonContext();
+  const supabase = createClient();
 
   const data = await buildStudentInsights(
     params.id,
@@ -19,6 +21,12 @@ export default async function StudentInsightsPage({ params }: { params: { id: st
     seasonCtx.selected?.name ?? null,
   );
   if (!data) notFound();
+
+  const { data: reviewRows } = await supabase
+    .from('reviews').select('*').eq('student_id', params.id)
+    .order('completed_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
+  const reviews = (reviewRows ?? []) as Review[];
 
   return (
     <>
@@ -39,10 +47,10 @@ export default async function StudentInsightsPage({ params }: { params: { id: st
           </>
         }
         description={data.seasonName
-          ? `Auto-populated review data for ${data.seasonName}. Click a goal to follow it back to the plan.`
+          ? `Auto-populated review data for ${data.seasonName}. Save a snapshot or click a past review to see what was true on a given date.`
           : 'Auto-populated review data across all seasons.'}
       />
-      <InsightsView data={data} />
+      <InsightsView data={data} reviews={reviews} />
     </>
   );
 }

@@ -943,8 +943,13 @@ export async function createReview(formData: FormData) {
 
   if (!plan_id) return { ok: false, error: 'Plan is required.' };
 
+  // Look up student_id from plan
+  const { data: planRow } = await supabase
+    .from('goal_plans').select('student_id').eq('id', plan_id).single();
+  const student_id = planRow ? (planRow as { student_id: string }).student_id : null;
+
   const { data, error } = await (supabase.from('reviews') as Any)
-    .insert({ plan_id, review_type, scheduled_date, reviewer_id: user.id })
+    .insert({ plan_id, student_id, review_type, scheduled_date, reviewer_id: user.id })
     .select('id').single();
 
   if (error) return { ok: false, error: error.message };
@@ -963,12 +968,20 @@ export async function updateReview(formData: FormData) {
 
   if (!id) return { ok: false, error: 'Missing id' };
 
+  // Lock check: refuse update if review has been finalized
+  const { data: existing } = await supabase
+    .from('reviews').select('finalized_at').eq('id', id).single();
+  if (existing && (existing as { finalized_at: string | null }).finalized_at) {
+    return { ok: false, error: 'This review has been finalized and is read-only.' };
+  }
+
   const { error } = await (supabase.from('reviews') as Any).update({
     summary, concerns, next_steps, scheduled_date,
   }).eq('id', id);
 
   if (error) return { ok: false, error: error.message };
   if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
+  revalidatePath(`/dashboard/students`);
   return { ok: true };
 }
 
@@ -992,6 +1005,14 @@ export async function deleteReview(formData: FormData) {
   const supabase = createClient();
   const id = String(formData.get('id') ?? '');
   const plan_id = String(formData.get('plan_id') ?? '');
+
+  // Lock check
+  const { data: existing } = await supabase
+    .from('reviews').select('finalized_at').eq('id', id).single();
+  if (existing && (existing as { finalized_at: string | null }).finalized_at) {
+    return { ok: false, error: 'Finalized reviews cannot be deleted.' };
+  }
+
   const { error } = await (supabase.from('reviews') as Any).delete().eq('id', id);
   if (error) return { ok: false, error: error.message };
   if (plan_id) revalidatePath(`/dashboard/goal-management/${plan_id}`);
@@ -2135,5 +2156,151 @@ export async function updateFamilyLinkRelationship(formData: FormData) {
     .update({ relationship: finalRelationship }).eq('id', id);
   if (error) return { ok: false, error: error.message };
   revalidatePath('/dashboard/students');
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7b: Snapshot reviews + per-goal ratings + finalize
+// ---------------------------------------------------------------------------
+
+/**
+ * Captures a snapshot of student insights and creates a review record.
+ * The snapshot_data is built by the caller (server component) and passed
+ * as serialized JSON.
+ */
+export async function createReviewSnapshot(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const plan_id = String(formData.get('plan_id') ?? '').trim() || null;
+  const snapshot_raw = String(formData.get('snapshot_data') ?? '').trim();
+  const auto_pcts_raw = String(formData.get('goal_auto_pcts') ?? '').trim();
+  const summary = String(formData.get('summary') ?? '').trim() || null;
+  const review_type = (String(formData.get('review_type') ?? 'ad_hoc').trim() || 'ad_hoc') as 'scheduled' | 'ad_hoc';
+
+  if (!student_id) return { ok: false, error: 'Student is required.' };
+  if (!snapshot_raw) return { ok: false, error: 'Snapshot data is required.' };
+
+  let snapshot: unknown;
+  try { snapshot = JSON.parse(snapshot_raw); }
+  catch { return { ok: false, error: 'Snapshot data is not valid JSON.' }; }
+
+  // If no plan_id, attach to the most recent active plan for this student
+  let final_plan_id = plan_id;
+  if (!final_plan_id) {
+    const { data: planRows } = await supabase
+      .from('goal_plans').select('id').eq('student_id', student_id)
+      .in('status', ['draft', 'active'])
+      .order('created_at', { ascending: false }).limit(1);
+    const plans = (planRows ?? []) as Array<{ id: string }>;
+    if (plans.length === 0) {
+      return { ok: false, error: 'This student has no active goal plan to attach a review to. Create a plan first, then save a review.' };
+    }
+    final_plan_id = plans[0].id;
+  }
+
+  const { data: reviewRow, error: reviewErr } = await (supabase.from('reviews') as Any)
+    .insert({
+      plan_id: final_plan_id,
+      student_id,
+      review_type,
+      summary,
+      reviewer_id: user.id,
+      snapshot_data: snapshot,
+      completed_at: new Date().toISOString(),
+    })
+    .select('id').single();
+
+  if (reviewErr || !reviewRow) {
+    return { ok: false, error: reviewErr?.message ?? 'Could not save review.' };
+  }
+  const review_id = (reviewRow as { id: string }).id;
+
+  // Pre-populate per-goal rating rows with the auto-computed pct so director
+  // can rate them later. goal_auto_pcts is a JSON object: { goal_id: pct }.
+  if (auto_pcts_raw) {
+    try {
+      const autoPcts = JSON.parse(auto_pcts_raw) as Record<string, number>;
+      const ratingRows = Object.entries(autoPcts).map(([goal_id, auto_pct]) => ({
+        review_id, goal_id, auto_pct,
+      }));
+      if (ratingRows.length > 0) {
+        await (supabase.from('review_goal_ratings') as Any).insert(ratingRows);
+      }
+    } catch {
+      // ignore — ratings can be added later
+    }
+  }
+
+  revalidatePath(`/dashboard/students/${student_id}/insights`);
+  return { ok: true, id: review_id };
+}
+
+export async function upsertReviewGoalRating(formData: FormData) {
+  const supabase = createClient();
+  const review_id = String(formData.get('review_id') ?? '').trim();
+  const goal_id = String(formData.get('goal_id') ?? '').trim();
+  const rating_raw = String(formData.get('rating') ?? '').trim();
+  const note = String(formData.get('note') ?? '').trim() || null;
+
+  if (!review_id || !goal_id) return { ok: false, error: 'Missing fields' };
+
+  // Lock check
+  const { data: existing } = await supabase
+    .from('reviews').select('finalized_at, student_id').eq('id', review_id).single();
+  if (existing && (existing as { finalized_at: string | null }).finalized_at) {
+    return { ok: false, error: 'This review has been finalized and is read-only.' };
+  }
+  const studentId = existing ? (existing as { student_id: string | null }).student_id : null;
+
+  const validRatings = ['on_track', 'behind', 'met', 'not_met'];
+  const rating = rating_raw && validRatings.includes(rating_raw) ? rating_raw : null;
+
+  // Find existing row
+  const { data: existingRating } = await supabase
+    .from('review_goal_ratings').select('id').eq('review_id', review_id).eq('goal_id', goal_id).maybeSingle();
+
+  if (existingRating) {
+    const { error } = await (supabase.from('review_goal_ratings') as Any)
+      .update({ rating, note })
+      .eq('id', (existingRating as { id: string }).id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await (supabase.from('review_goal_ratings') as Any)
+      .insert({ review_id, goal_id, rating, note });
+    if (error) return { ok: false, error: error.message };
+  }
+
+  if (studentId) revalidatePath(`/dashboard/students/${studentId}/insights/reviews/${review_id}`);
+  return { ok: true };
+}
+
+export async function finalizeReview(formData: FormData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing id' };
+
+  // Don't double-finalize
+  const { data: existing } = await supabase
+    .from('reviews').select('finalized_at, student_id').eq('id', id).single();
+  if (!existing) return { ok: false, error: 'Review not found.' };
+  const e = existing as { finalized_at: string | null; student_id: string | null };
+  if (e.finalized_at) return { ok: false, error: 'Review already finalized.' };
+
+  const { error } = await (supabase.from('reviews') as Any).update({
+    finalized_at: new Date().toISOString(),
+    finalized_by: user.id,
+  }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  if (e.student_id) {
+    revalidatePath(`/dashboard/students/${e.student_id}/insights`);
+    revalidatePath(`/dashboard/students/${e.student_id}/insights/reviews/${id}`);
+  }
   return { ok: true };
 }
