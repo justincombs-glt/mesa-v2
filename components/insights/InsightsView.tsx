@@ -1,11 +1,15 @@
+import Link from 'next/link';
 import { Sparkline } from '@/components/insights/Sparkline';
+import { SaveReviewButton } from '@/components/insights/SaveReviewButton';
 import type { StudentInsights, AttendanceBreakdown, TestTrend, GoalProgressDetail } from '@/lib/student-insights';
+import type { Review } from '@/lib/supabase/types';
 
 interface Props {
   data: StudentInsights;
+  reviews: Review[];
 }
 
-export function InsightsView({ data }: Props) {
+export function InsightsView({ data, reviews }: Props) {
   return (
     <div className="flex flex-col gap-10">
       <SummaryCards data={data} />
@@ -13,6 +17,7 @@ export function InsightsView({ data }: Props) {
       <TestTrendsSection trends={data.testTrends} />
       <AttendanceDetailSection attendance={data.attendance} />
       <WorkoutSection workout={data.workout} seasonName={data.seasonName} />
+      <PastReviewsSection insights={data} reviews={reviews} />
     </div>
   );
 }
@@ -284,4 +289,71 @@ function WorkoutSection({ workout, seasonName }: { workout: StudentInsights['wor
       </div>
     </section>
   );
+}
+
+// ----------------------------------------------------------------------------
+// Past reviews + Save as review
+// ----------------------------------------------------------------------------
+
+function PastReviewsSection({ insights, reviews }: { insights: StudentInsights; reviews: Review[] }) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div className="kicker">Past reviews · {reviews.length}</div>
+        <SaveReviewButton insights={insights} />
+      </div>
+      {reviews.length === 0 ? (
+        <div className="card-base p-6 text-center text-sm text-ink-dim">
+          No reviews saved yet. Click <strong className="text-ink">+ Save as review</strong> to capture this snapshot as a permanent record.
+        </div>
+      ) : (
+        <div className="card-base overflow-hidden">
+          {reviews.map((r, idx) => (
+            <ReviewRow key={r.id} review={r} studentId={insights.student.id} first={idx === 0} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReviewRow({ review, studentId, first }: { review: Review; studentId: string; first: boolean }) {
+  return (
+    <Link href={`/dashboard/students/${studentId}/insights/reviews/${review.id}`}
+      className={`flex items-center gap-4 px-5 py-4 group ${first ? '' : 'border-t border-ink-hair'}`}>
+      <div className="flex-shrink-0 w-24 text-right">
+        <div className="font-serif text-sm text-ink">{formatReviewDate(review.completed_at ?? review.created_at)}</div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+          {review.finalized_at ? (
+            <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-ink text-paper">
+              Finalized
+            </span>
+          ) : (
+            <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-sand-100 text-ink">
+              Draft
+            </span>
+          )}
+          <span className="text-[9px] font-mono tracking-wider uppercase text-ink-faint capitalize">
+            {review.review_type.replace('_', ' ')}
+          </span>
+          {review.summary && (
+            <span className="text-sm text-ink truncate">{review.summary}</span>
+          )}
+        </div>
+        {review.snapshot_data ? null : (
+          <div className="text-[10px] font-mono text-ink-faint">Notes only — no snapshot</div>
+        )}
+      </div>
+      <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">
+        Open →
+      </span>
+    </Link>
+  );
+}
+
+function formatReviewDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
