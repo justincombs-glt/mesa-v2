@@ -369,6 +369,7 @@ export interface GoalPlanTest {
 export interface Review {
   id: string;
   plan_id: string;
+  student_id: string | null;
   review_type: ReviewType;
   scheduled_date: string | null;
   completed_at: string | null;
@@ -379,6 +380,22 @@ export interface Review {
   attendance_pct: number | null;
   goals_progress_notes: string | null;
   tests_notes: string | null;
+  snapshot_data: unknown | null;
+  finalized_at: string | null;
+  finalized_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GoalRating = 'on_track' | 'behind' | 'met' | 'not_met';
+
+export interface ReviewGoalRating {
+  id: string;
+  review_id: string;
+  goal_id: string;
+  rating: GoalRating | null;
+  note: string | null;
+  auto_pct: number | null;
   created_at: string;
   updated_at: string;
 }
