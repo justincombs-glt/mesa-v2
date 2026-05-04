@@ -132,7 +132,7 @@ function DrillFormModal({ open, onClose, drill }: { open: boolean; onClose: () =
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" defaultValue={drill?.duration_minutes ?? ''} min="1" max="90" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" defaultValue={drill?.duration_minutes ?? ''} min="1" max="90" className="input-base" />
           </FormField>
           <FormField label="Age groups" help="Comma-separated">
             <input type="text" name="age_groups" defaultValue={(drill?.age_groups ?? []).join(', ')} placeholder="U12, U14" className="input-base" />

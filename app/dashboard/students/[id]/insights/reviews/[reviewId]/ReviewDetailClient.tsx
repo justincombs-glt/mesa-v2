@@ -356,45 +356,88 @@ function SnapshotSummary({ snapshot }: { snapshot: StudentInsights }) {
       </div>
 
       {snapshot.testTrends.length > 0 && (
-        <div className="card-base overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
-                <th className="text-left px-4 py-2.5 font-medium">Test</th>
-                <th className="text-right px-2 py-2.5 font-medium">Baseline</th>
-                <th className="text-right px-2 py-2.5 font-medium">Latest</th>
-                <th className="text-right px-2 py-2.5 font-medium">Δ</th>
-                <th className="text-right px-2 py-2.5 font-medium">N</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.testTrends.map((t, idx) => (
-                <tr key={t.test_id} className={idx > 0 ? 'border-t border-ink-hair' : ''}>
-                  <td className="px-4 py-2.5">
-                    <div className="text-ink">{t.test_title}</div>
-                    {t.test_unit && (
-                      <div className="text-[9px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">{t.test_unit}</div>
-                    )}
-                  </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-ink">{t.baseline ?? '—'}</td>
-                  <td className="px-2 py-2.5 text-right font-mono text-ink">{t.latest ?? '—'}</td>
-                  <td className={`px-2 py-2.5 text-right font-mono ${
-                    t.pct_change_from_baseline === null ? 'text-ink-faint' :
-                    t.pct_change_from_baseline > 0 ? 'text-sage-dark' :
-                    t.pct_change_from_baseline < 0 ? 'text-crimson' :
-                    'text-ink-faint'
-                  }`}>
-                    {t.pct_change_from_baseline === null ? '—' :
-                     `${t.pct_change_from_baseline > 0 ? '+' : ''}${t.pct_change_from_baseline}%`}
-                  </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-ink-faint text-xs">
-                    {t.results.length}
-                  </td>
+        <>
+          {/* Mobile cards */}
+          <div className="md:hidden flex flex-col gap-2">
+            {snapshot.testTrends.map((t) => {
+              const change = t.pct_change_from_baseline;
+              const changeColor =
+                change === null ? 'text-ink-faint' :
+                change > 0 ? 'text-sage-dark' :
+                change < 0 ? 'text-crimson' :
+                'text-ink-faint';
+              return (
+                <div key={t.test_id} className="card-base p-3">
+                  <div className="font-medium text-ink mb-1">{t.test_title}</div>
+                  {t.test_unit && (
+                    <div className="text-[9px] font-mono uppercase tracking-wider text-ink-faint mb-2">{t.test_unit}</div>
+                  )}
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div>
+                      <div className="kicker text-[8px]">Baseline</div>
+                      <div className="font-mono text-sm text-ink">{t.baseline ?? '—'}</div>
+                    </div>
+                    <div>
+                      <div className="kicker text-[8px]">Latest</div>
+                      <div className="font-mono text-sm text-ink">{t.latest ?? '—'}</div>
+                    </div>
+                    <div>
+                      <div className="kicker text-[8px]">Δ</div>
+                      <div className={`font-mono text-sm ${changeColor}`}>
+                        {change === null ? '—' : `${change > 0 ? '+' : ''}${change}%`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="kicker text-[8px]">N</div>
+                      <div className="font-mono text-sm text-ink-faint">{t.results.length}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block card-base overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
+                  <th className="text-left px-4 py-2.5 font-medium">Test</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Baseline</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Latest</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Δ</th>
+                  <th className="text-right px-2 py-2.5 font-medium">N</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {snapshot.testTrends.map((t, idx) => (
+                  <tr key={t.test_id} className={idx > 0 ? 'border-t border-ink-hair' : ''}>
+                    <td className="px-4 py-2.5">
+                      <div className="text-ink">{t.test_title}</div>
+                      {t.test_unit && (
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">{t.test_unit}</div>
+                      )}
+                    </td>
+                    <td className="px-2 py-2.5 text-right font-mono text-ink">{t.baseline ?? '—'}</td>
+                    <td className="px-2 py-2.5 text-right font-mono text-ink">{t.latest ?? '—'}</td>
+                    <td className={`px-2 py-2.5 text-right font-mono ${
+                      t.pct_change_from_baseline === null ? 'text-ink-faint' :
+                      t.pct_change_from_baseline > 0 ? 'text-sage-dark' :
+                      t.pct_change_from_baseline < 0 ? 'text-crimson' :
+                      'text-ink-faint'
+                    }`}>
+                      {t.pct_change_from_baseline === null ? '—' :
+                       `${t.pct_change_from_baseline > 0 ? '+' : ''}${t.pct_change_from_baseline}%`}
+                    </td>
+                    <td className="px-2 py-2.5 text-right font-mono text-ink-faint text-xs">
+                      {t.results.length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );

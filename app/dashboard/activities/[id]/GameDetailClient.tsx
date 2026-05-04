@@ -109,10 +109,10 @@ function GameMetaSection({ game, readOnly }: { game: Activity; readOnly: boolean
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Our score">
-            <input type="number" name="our_score" defaultValue={game.our_score ?? ''} min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="our_score" defaultValue={game.our_score ?? ''} min="0" className="input-base" />
           </FormField>
           <FormField label="Opp. score">
-            <input type="number" name="opp_score" defaultValue={game.opp_score ?? ''} min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="opp_score" defaultValue={game.opp_score ?? ''} min="0" className="input-base" />
           </FormField>
         </div>
 
@@ -270,7 +270,14 @@ function StatsSection({ title, entries, game, type, readOnly }: {
   return (
     <section>
       <div className="kicker mb-4">{title} &middot; {entries.length}</div>
-      <div className="card-base overflow-x-auto">
+      {/* Mobile cards */}
+      <div className="md:hidden flex flex-col gap-3">
+        {entries.map((r) => (
+          <StatCard key={r.student.id} entry={r} gameId={game.id} type={type} readOnly={readOnly} />
+        ))}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden md:block card-base overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
@@ -305,6 +312,80 @@ function StatsSection({ title, entries, game, type, readOnly }: {
         </table>
       </div>
     </section>
+  );
+}
+
+function StatCard({ entry, gameId, type, readOnly }: {
+  entry: RosterEntry; gameId: string; type: 'skater' | 'goalie'; readOnly: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const stats = entry.stats;
+
+  if (editing && !readOnly) {
+    return (
+      <div className="card-base p-4">
+        <StatEditCard entry={entry} gameId={gameId} type={type} onDone={() => setEditing(false)} />
+      </div>
+    );
+  }
+
+  const svPct = type === 'goalie' && stats?.saves !== null && stats?.saves !== undefined
+    && stats?.shots_against && stats.shots_against > 0
+    ? ((stats.saves / stats.shots_against) * 100).toFixed(1)
+    : null;
+
+  return (
+    <div className={`card-base p-4 ${!readOnly ? 'active:bg-ivory' : ''}`}
+      onClick={readOnly ? undefined : () => setEditing(true)}
+      role={readOnly ? undefined : 'button'}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {entry.student.jersey_number && (
+            <span className="text-crimson font-serif">#{entry.student.jersey_number}</span>
+          )}
+          <span className="text-ink font-medium truncate">{entry.student.full_name}</span>
+        </div>
+        {!readOnly && (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint flex-shrink-0">Edit</span>
+        )}
+      </div>
+      {type === 'skater' ? (
+        <div className="grid grid-cols-6 gap-2 text-center">
+          <CardStat label="G" value={stats?.goals ?? 0} />
+          <CardStat label="A" value={stats?.assists ?? 0} />
+          <CardStat label="+/−" value={stats?.plus_minus ?? 0} signed />
+          <CardStat label="Shots" value={stats?.shots ?? 0} />
+          <CardStat label="PIM" value={stats?.penalty_mins ?? 0} />
+          <CardStat label="TOI" value={stats?.time_on_ice ?? null} string />
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <CardStat label="Saves" value={stats?.saves} />
+          <CardStat label="SA" value={stats?.shots_against} />
+          <CardStat label="GA" value={stats?.goals_against} />
+          <CardStat label="SV%" value={svPct} string />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardStat({ label, value, signed, string }: { label: string; value: number | string | null | undefined; signed?: boolean; string?: boolean }) {
+  let display: React.ReactNode;
+  if (value === null || value === undefined) {
+    display = <span className="text-ink-faint">—</span>;
+  } else if (string) {
+    display = String(value);
+  } else if (signed && typeof value === 'number' && value > 0) {
+    display = `+${value}`;
+  } else {
+    display = String(value);
+  }
+  return (
+    <div>
+      <div className="kicker text-[8px] mb-0.5">{label}</div>
+      <div className="font-mono text-sm text-ink">{display}</div>
+    </div>
   );
 }
 
@@ -470,7 +551,7 @@ function StatInput({ label, name, defaultValue }: {
   return (
     <div>
       <label className="kicker block mb-1" dangerouslySetInnerHTML={{ __html: label }} />
-      <input type="number" name={name} defaultValue={defaultValue}
+      <input type="number" inputMode="decimal" name={name} defaultValue={defaultValue}
         className="input-base !h-8 text-xs font-mono" />
     </div>
   );
@@ -478,4 +559,74 @@ function StatInput({ label, name, defaultValue }: {
 
 function positionLabel(p: string): string {
   return p === 'F' ? 'Forward' : p === 'D' ? 'Defense' : 'Goalie';
+}
+
+// StatEditCard: mobile-equivalent of StatEditRow. Renders the same form fields
+// in a card-friendly layout (grid-3 instead of grid-6 for narrow viewports).
+function StatEditCard({ entry, gameId, type, onDone }: {
+  entry: RosterEntry; gameId: string; type: 'skater' | 'goalie'; onDone: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (fd: FormData) => {
+    fd.set('activity_id', gameId);
+    fd.set('student_id', entry.student.id);
+    fd.set('type', type);
+    setSaving(true);
+    setError(null);
+    const res = await upsertGameStat(fd);
+    setSaving(false);
+    if (res.ok) onDone();
+    else setError(res.error ?? 'Failed.');
+  };
+
+  return (
+    <form action={handleSubmit} className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-ink">
+        {entry.student.jersey_number && (
+          <span className="text-crimson font-serif">#{entry.student.jersey_number}</span>
+        )}
+        <span>{entry.student.full_name}</span>
+      </div>
+
+      {type === 'skater' ? (
+        <div className="grid grid-cols-3 gap-2">
+          <StatInput label="Goals" name="goals" defaultValue={entry.stats?.goals ?? 0} />
+          <StatInput label="Assists" name="assists" defaultValue={entry.stats?.assists ?? 0} />
+          <StatInput label="+/−" name="plus_minus" defaultValue={entry.stats?.plus_minus ?? 0} />
+          <StatInput label="Shots" name="shots" defaultValue={entry.stats?.shots ?? 0} />
+          <StatInput label="PIM" name="penalty_mins" defaultValue={entry.stats?.penalty_mins ?? 0} />
+          <div>
+            <label className="kicker block mb-1">TOI</label>
+            <input type="text" name="time_on_ice" defaultValue={entry.stats?.time_on_ice ?? ''}
+              placeholder="MM:SS" className="input-base !h-9 text-sm" />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          <StatInput label="Saves" name="saves" defaultValue={entry.stats?.saves ?? ''} />
+          <StatInput label="SA" name="shots_against" defaultValue={entry.stats?.shots_against ?? ''} />
+          <StatInput label="GA" name="goals_against" defaultValue={entry.stats?.goals_against ?? ''} />
+        </div>
+      )}
+
+      <div>
+        <label className="kicker block mb-1">Notes</label>
+        <textarea name="notes" defaultValue={entry.stats?.notes ?? ''} rows={2}
+          className="input-base resize-none text-sm" />
+      </div>
+
+      {error && <div className="text-xs text-crimson">{error}</div>}
+
+      <div className="flex justify-end gap-2 pt-2 border-t border-ink-hair">
+        <button type="button" onClick={onDone} disabled={saving}
+          className="btn-secondary !h-9 text-xs">Cancel</button>
+        <button type="submit" disabled={saving}
+          className="btn-primary !h-9 text-xs">
+          {saving ? 'Saving…' : 'Save stats'}
+        </button>
+      </div>
+    </form>
+  );
 }

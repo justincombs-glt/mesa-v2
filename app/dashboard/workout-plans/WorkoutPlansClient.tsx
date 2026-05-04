@@ -101,7 +101,7 @@ function NewPlanModal({ open, onClose }: { open: boolean; onClose: () => void })
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" min="0" className="input-base" />
           </FormField>
         </div>
         <FormField label="Description">

@@ -173,7 +173,7 @@ function NewWorkoutModal({ open, onClose, plans, students, seasonId }: {
             <input type="time" name="starts_at" className="input-base" />
           </FormField>
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" min="0" className="input-base" />
           </FormField>
         </div>
 

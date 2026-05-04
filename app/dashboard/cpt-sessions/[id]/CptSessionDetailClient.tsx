@@ -150,14 +150,53 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-1">
         <div className="kicker">Results &middot; {data.students.length} student{data.students.length === 1 ? '' : 's'} &middot; {data.tests.length} test{data.tests.length === 1 ? '' : 's'}</div>
         <div className="text-[10px] font-mono tracking-wider uppercase text-ink-faint">
-          Click a cell to enter a value &middot; Tab across &middot; Changes save automatically
+          Tap a value to edit &middot; Changes save automatically
         </div>
       </div>
 
-      <div className="card-base overflow-x-auto">
+      {/* Mobile: card per student */}
+      <div className="md:hidden flex flex-col gap-3">
+        {data.students.map((student) => (
+          <div key={student.id} className="card-base p-4">
+            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-ink-hair">
+              {student.jersey_number && (
+                <span className="text-crimson font-serif">#{student.jersey_number}</span>
+              )}
+              <span className="text-ink font-medium">{student.full_name}</span>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {data.tests.map((test) => (
+                <div key={test.id} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-ink truncate">{test.title}</div>
+                    {test.unit && <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">{test.unit}</div>}
+                  </div>
+                  <div className="flex-shrink-0 w-32">
+                    <ResultCellInput
+                      sessionId={data.session.id}
+                      seasonId={data.session.season_id}
+                      isBaseline={data.session.is_baseline}
+                      sessionDate={data.session.session_date}
+                      studentId={student.id}
+                      testId={test.id}
+                      unit={test.unit}
+                      initialValue={data.resultMap[`${student.id}:${test.id}`]?.value ?? null}
+                      readOnly={readOnly}
+                      mobile
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: grid table */}
+      <div className="hidden md:block card-base overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
@@ -213,11 +252,12 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
 // Per-cell input with onBlur save
 function ResultCellInput({
   sessionId, seasonId, isBaseline, sessionDate,
-  studentId, testId, unit, initialValue, readOnly,
+  studentId, testId, unit, initialValue, readOnly, mobile,
 }: {
   sessionId: string; seasonId: string | null; isBaseline: boolean; sessionDate: string;
   studentId: string; testId: string; unit: string | null;
   initialValue: number | null; readOnly: boolean;
+  mobile?: boolean;
 }) {
   const [value, setValue] = useState<string>(initialValue !== null ? String(initialValue) : '');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -254,24 +294,26 @@ function ResultCellInput({
     status === 'saving' ? 'border-sand-200' :
     'border-transparent';
 
-  return (
-    <td className="px-1 py-1 text-right">
-      <div className="relative">
-        <input
-          type="number"
-          step="0.01"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={doSave}
-          disabled={readOnly}
-          placeholder={unit ?? ''}
-          title={errMsg ?? undefined}
-          className={`w-full text-right font-mono text-sm px-2 py-1.5 rounded border-2 ${borderClass} bg-paper hover:bg-ivory focus:bg-paper focus:border-crimson focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed`}
-        />
-        {status === 'saving' && (
-          <span className="absolute -right-0.5 -top-0.5 text-[8px] text-ink-faint">…</span>
-        )}
+  const inputElement = (
+    <div className="relative">
+      <input
+        type="number" inputMode="decimal"
+        step="0.01"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={doSave}
+        disabled={readOnly}
+        placeholder={unit ?? ''}
+        title={errMsg ?? undefined}
+        className={`w-full text-right font-mono text-sm px-2 py-1.5 rounded border-2 ${borderClass} bg-paper hover:bg-ivory focus:bg-paper focus:border-crimson focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed`}
+      />
+      {status === 'saving' && (
+        <span className="absolute -right-0.5 -top-0.5 text-[8px] text-ink-faint">…</span>
+      )}
       </div>
-    </td>
   );
+
+  return mobile
+    ? inputElement
+    : <td className="px-1 py-1 text-right">{inputElement}</td>;
 }

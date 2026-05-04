@@ -175,25 +175,81 @@ function TestTrendsSection({ trends }: { trends: TestTrend[] }) {
           No test results recorded for this season yet.
         </div>
       ) : (
-        <div className="card-base overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
-                <th className="text-left px-4 py-2.5 font-medium">Test</th>
-                <th className="text-right px-2 py-2.5 font-medium">Baseline</th>
-                <th className="text-right px-2 py-2.5 font-medium">Latest</th>
-                <th className="text-right px-2 py-2.5 font-medium">Δ</th>
-                <th className="text-center px-4 py-2.5 font-medium">Trend</th>
-                <th className="text-right px-2 py-2.5 font-medium">N</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trends.map((t, idx) => <TestTrendRow key={t.test_id} trend={t} first={idx === 0} />)}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Mobile: card-per-row */}
+          <div className="md:hidden flex flex-col gap-3">
+            {trends.map((t) => <TestTrendCard key={t.test_id} trend={t} />)}
+          </div>
+          {/* Desktop: table */}
+          <div className="hidden md:block card-base overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-b border-ink-hair">
+                  <th className="text-left px-4 py-2.5 font-medium">Test</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Baseline</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Latest</th>
+                  <th className="text-right px-2 py-2.5 font-medium">Δ</th>
+                  <th className="text-center px-4 py-2.5 font-medium">Trend</th>
+                  <th className="text-right px-2 py-2.5 font-medium">N</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trends.map((t, idx) => <TestTrendRow key={t.test_id} trend={t} first={idx === 0} />)}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
+  );
+}
+
+function TestTrendCard({ trend }: { trend: TestTrend }) {
+  const change = trend.pct_change_from_baseline;
+  const changeColor =
+    change === null ? 'text-ink-faint' :
+    change > 0 ? 'text-sage-dark' :
+    change < 0 ? 'text-crimson' :
+    'text-ink-faint';
+  const changeText = change === null
+    ? '—'
+    : `${change > 0 ? '+' : ''}${change}%`;
+
+  return (
+    <div className="card-base p-4">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <div className="font-medium text-ink">{trend.test_title}</div>
+          {trend.test_unit && (
+            <div className="text-[9px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">
+              {trend.test_unit} · {trend.direction === 'higher_is_better' ? 'higher better' : 'lower better'}
+            </div>
+          )}
+        </div>
+        <div className="flex-shrink-0">
+          <Sparkline values={trend.results.map((r) => r.value)} width={80} height={28}
+            lowerIsBetter={trend.direction === 'lower_is_better'} />
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-2 text-center">
+        <div>
+          <div className="kicker text-[8px] mb-0.5">Baseline</div>
+          <div className="font-mono text-sm text-ink">{trend.baseline ?? '—'}</div>
+        </div>
+        <div>
+          <div className="kicker text-[8px] mb-0.5">Latest</div>
+          <div className="font-mono text-sm text-ink">{trend.latest ?? '—'}</div>
+        </div>
+        <div>
+          <div className="kicker text-[8px] mb-0.5">Δ</div>
+          <div className={`font-mono text-sm ${changeColor}`}>{changeText}</div>
+        </div>
+        <div>
+          <div className="kicker text-[8px] mb-0.5">N</div>
+          <div className="font-mono text-sm text-ink-faint">{trend.results.length}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

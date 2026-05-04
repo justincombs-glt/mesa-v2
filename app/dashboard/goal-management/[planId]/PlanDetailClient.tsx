@@ -360,7 +360,7 @@ function AddGoalModal({ open, onClose, plan, templates, tests, nextSequence }: {
               </select>
             </FormField>
             <FormField label="Numeric target" help="The target value the test should reach.">
-              <input type="number" step="0.01" name="target_numeric" placeholder="e.g. 24" className="input-base" />
+              <input type="number" inputMode="decimal" step="0.01" name="target_numeric" placeholder="e.g. 24" className="input-base" />
             </FormField>
           </div>
         </div>
@@ -431,7 +431,7 @@ function EditGoalModal({ open, onClose, goal, planId, tests }: {
             <input type="text" name="current_value" defaultValue={goal.current_value ?? ''} className="input-base" />
           </FormField>
           <FormField label="Progress %">
-            <input type="number" name="progress_pct" defaultValue={goal.progress_pct} min="0" max="100" className="input-base" />
+            <input type="number" inputMode="decimal" name="progress_pct" defaultValue={goal.progress_pct} min="0" max="100" className="input-base" />
           </FormField>
           <FormField label="Due date">
             <input type="date" name="due_date" defaultValue={goal.due_date ?? ''} className="input-base" />
@@ -453,7 +453,7 @@ function EditGoalModal({ open, onClose, goal, planId, tests }: {
               </select>
             </FormField>
             <FormField label="Numeric target">
-              <input type="number" step="0.01" name="target_numeric" defaultValue={goal.target_numeric ?? ''} className="input-base" />
+              <input type="number" inputMode="decimal" step="0.01" name="target_numeric" defaultValue={goal.target_numeric ?? ''} className="input-base" />
             </FormField>
           </div>
         </div>

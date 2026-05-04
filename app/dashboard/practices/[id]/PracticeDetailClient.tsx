@@ -91,7 +91,7 @@ function MetaSection({ practice, readOnly }: { practice: Activity; readOnly: boo
     <section className="pb-6 border-b border-ink-hair">
       <div className="kicker mb-4">Edit practice</div>
       <form action={handleSubmit} className="card-base p-6 flex flex-col gap-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <FormField label="Date" required>
             <input type="date" name="occurred_on" defaultValue={practice.occurred_on} required className="input-base" />
           </FormField>
@@ -99,7 +99,7 @@ function MetaSection({ practice, readOnly }: { practice: Activity; readOnly: boo
             <input type="time" name="starts_at" defaultValue={practice.starts_at ?? ''} className="input-base" />
           </FormField>
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" defaultValue={practice.duration_minutes ?? ''} min="15" max="240" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" defaultValue={practice.duration_minutes ?? ''} min="15" max="240" className="input-base" />
           </FormField>
         </div>
 

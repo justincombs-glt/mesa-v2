@@ -156,7 +156,7 @@ function NewPracticeModal({ open, onClose, students, templates, seasonId }: {
           </select>
         </FormField>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <FormField label="Date" required>
             <input type="date" name="occurred_on" required className="input-base" />
           </FormField>
@@ -164,7 +164,7 @@ function NewPracticeModal({ open, onClose, students, templates, seasonId }: {
             <input type="time" name="starts_at" className="input-base" />
           </FormField>
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" min="15" max="240" placeholder="60" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" min="15" max="240" placeholder="60" className="input-base" />
           </FormField>
         </div>
 

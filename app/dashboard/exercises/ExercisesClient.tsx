@@ -131,13 +131,13 @@ function ExerciseFormModal({ open, onClose, exercise }: { open: boolean; onClose
         </FormField>
         <div className="grid grid-cols-3 gap-3">
           <FormField label="Default sets">
-            <input type="number" name="default_sets" defaultValue={exercise?.default_sets ?? ''} min="1" max="20" className="input-base" />
+            <input type="number" inputMode="decimal" name="default_sets" defaultValue={exercise?.default_sets ?? ''} min="1" max="20" className="input-base" />
           </FormField>
           <FormField label="Default reps">
-            <input type="number" name="default_reps" defaultValue={exercise?.default_reps ?? ''} min="1" max="100" className="input-base" />
+            <input type="number" inputMode="decimal" name="default_reps" defaultValue={exercise?.default_reps ?? ''} min="1" max="100" className="input-base" />
           </FormField>
           <FormField label="Duration (sec)" help="For timed exercises">
-            <input type="number" name="default_duration_seconds" defaultValue={exercise?.default_duration_seconds ?? ''} min="1" className="input-base" />
+            <input type="number" inputMode="decimal" name="default_duration_seconds" defaultValue={exercise?.default_duration_seconds ?? ''} min="1" className="input-base" />
           </FormField>
         </div>
         <FormField label="Equipment" help="Comma-separated">

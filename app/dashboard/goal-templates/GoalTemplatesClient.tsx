@@ -174,7 +174,7 @@ function GoalTemplateFormModal({ open, onClose, template }: { open: boolean; onC
             <input type="text" name="target_unit" defaultValue={template?.target_unit ?? ''} placeholder="goals, lb" className="input-base" />
           </FormField>
           <FormField label="Weeks">
-            <input type="number" name="suggested_deadline_weeks" defaultValue={template?.suggested_deadline_weeks ?? ''} className="input-base" />
+            <input type="number" inputMode="decimal" name="suggested_deadline_weeks" defaultValue={template?.suggested_deadline_weeks ?? ''} className="input-base" />
           </FormField>
         </div>
 

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { AppRole, Season } from '@/lib/supabase/types';
 import { SignOutButton } from './SignOutButton';
 import { SeasonSelector } from './SeasonSelector';
+import { MobileNavDrawer } from './MobileNavDrawer';
 
 interface AppShellProps {
   role: AppRole;
@@ -107,10 +108,21 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
 
   return (
     <div className="min-h-screen bg-ivory flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className="md:w-64 md:min-h-screen md:border-r md:border-ink-hair md:bg-paper md:flex md:flex-col md:flex-shrink-0">
+      {/* Mobile drawer + top bar (md:hidden internally) */}
+      <MobileNavDrawer
+        nav={nav}
+        role={role}
+        email={email}
+        displayName={displayName}
+        currentPath={currentPath}
+        selectedSeason={selectedSeason}
+        allSeasons={allSeasons}
+      />
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex md:w-64 md:min-h-screen md:border-r md:border-ink-hair md:bg-paper md:flex-col md:flex-shrink-0">
         {/* Brand */}
-        <div className="px-5 md:px-6 py-5 md:py-7 border-b border-ink-hair md:border-b-0">
+        <div className="px-6 py-7 border-b border-ink-hair md:border-b-0">
           <Link href="/dashboard" className="flex items-center gap-3 cursor-pointer">
             <div className="w-9 h-9 rounded-full bg-ink grid place-items-center flex-shrink-0">
               <span className="font-serif italic text-paper text-lg">M</span>
@@ -126,7 +138,7 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
 
         {/* Season selector (sidebar) */}
         {selectedSeason && allSeasons && allSeasons.length > 0 && (
-          <div className="hidden md:block px-4 pt-3 pb-1">
+          <div className="px-4 pt-3 pb-1">
             <div className="kicker mb-1.5">Season</div>
             <SeasonSelector
               selected={selectedSeason}
@@ -136,7 +148,7 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
         )}
 
         {/* Nav items */}
-        <nav className="hidden md:flex md:flex-col gap-0.5 px-3 py-4 flex-1">
+        <nav className="flex flex-col gap-0.5 px-3 py-4 flex-1">
           {nav.map((item) => {
             const active = currentPath === item.href ||
               (item.href !== '/dashboard' && currentPath?.startsWith(item.href));
@@ -158,7 +170,7 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
         </nav>
 
         {/* User block */}
-        <div className="hidden md:flex md:flex-col gap-3 px-5 py-5 border-t border-ink-hair">
+        <div className="flex flex-col gap-3 px-5 py-5 border-t border-ink-hair">
           <div>
             <span
               className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono tracking-[0.15em] uppercase border ${
@@ -180,25 +192,6 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
         </div>
       </aside>
 
-      {/* Mobile nav bar */}
-      <nav className="md:hidden flex gap-1 overflow-x-auto px-3 py-2 border-b border-ink-hair bg-paper">
-        {nav.map((item) => {
-          const active = currentPath === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                active ? 'bg-ink text-paper' : 'text-ink-dim'
-              }`}
-            >
-              <span className="w-3.5 h-3.5">{item.icon}</span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
       {/* Main content */}
       <main className="flex-1 min-w-0">
         {isArchivedView && selectedSeason && (
@@ -218,7 +211,7 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
             </div>
           </div>
         )}
-        <div className="max-w-[1200px] mx-auto px-5 md:px-10 py-8 md:py-12">
+        <div className="max-w-[1200px] mx-auto px-4 md:px-10 py-6 md:py-12">
           {children}
         </div>
       </main>

@@ -82,7 +82,7 @@ function MetaSection({ plan }: { plan: WorkoutPlan }) {
           <input type="text" name="focus" defaultValue={plan.focus ?? ''} className="input-base" />
         </FormField>
         <FormField label="Duration (min)">
-          <input type="number" name="duration_minutes" defaultValue={plan.duration_minutes ?? ''} min="0" className="input-base" />
+          <input type="number" inputMode="decimal" name="duration_minutes" defaultValue={plan.duration_minutes ?? ''} min="0" className="input-base" />
         </FormField>
         <FormField label="Description">
           <textarea name="description" defaultValue={plan.description ?? ''} rows={2} className="input-base resize-none" />
@@ -262,19 +262,19 @@ function EditItemForm({ item, planId, onDone }: {
         <div className="text-sm font-medium text-ink mb-1">{item.exercise_title}</div>
         <div className="grid grid-cols-5 gap-2">
           <FormField label="Sets">
-            <input type="number" name="default_sets" defaultValue={item.default_sets ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_sets" defaultValue={item.default_sets ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
           </FormField>
           <FormField label="Reps">
-            <input type="number" name="default_reps" defaultValue={item.default_reps ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_reps" defaultValue={item.default_reps ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
           </FormField>
           <FormField label="Weight (lb)">
-            <input type="number" step="0.5" name="default_weight_lbs" defaultValue={item.default_weight_lbs ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+            <input type="number" inputMode="decimal" step="0.5" name="default_weight_lbs" defaultValue={item.default_weight_lbs ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
           </FormField>
           <FormField label="Duration (s)">
-            <input type="number" name="default_duration_seconds" defaultValue={item.default_duration_seconds ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_duration_seconds" defaultValue={item.default_duration_seconds ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
           </FormField>
           <FormField label="Rest (s)">
-            <input type="number" name="default_rest_seconds" defaultValue={item.default_rest_seconds ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_rest_seconds" defaultValue={item.default_rest_seconds ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
           </FormField>
         </div>
         <FormField label="Coach notes">
@@ -328,19 +328,19 @@ function AddItemModal({ open, onClose, planId, exercises }: {
 
         <div className="grid grid-cols-5 gap-2">
           <FormField label="Sets">
-            <input type="number" name="default_sets" min="0" className="input-base !h-9 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_sets" min="0" className="input-base !h-9 text-xs font-mono" />
           </FormField>
           <FormField label="Reps">
-            <input type="number" name="default_reps" min="0" className="input-base !h-9 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_reps" min="0" className="input-base !h-9 text-xs font-mono" />
           </FormField>
           <FormField label="Weight (lb)">
-            <input type="number" step="0.5" name="default_weight_lbs" min="0" className="input-base !h-9 text-xs font-mono" />
+            <input type="number" inputMode="decimal" step="0.5" name="default_weight_lbs" min="0" className="input-base !h-9 text-xs font-mono" />
           </FormField>
           <FormField label="Duration (s)">
-            <input type="number" name="default_duration_seconds" min="0" className="input-base !h-9 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_duration_seconds" min="0" className="input-base !h-9 text-xs font-mono" />
           </FormField>
           <FormField label="Rest (s)">
-            <input type="number" name="default_rest_seconds" min="0" className="input-base !h-9 text-xs font-mono" />
+            <input type="number" inputMode="decimal" name="default_rest_seconds" min="0" className="input-base !h-9 text-xs font-mono" />
           </FormField>
         </div>
 

@@ -169,7 +169,7 @@ export function PracticePlanEditorClient({ plan, initialItems, availableDrills }
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="input-base resize-none" />
           </FormField>
           <FormField label="Target duration (min)" help={`Items currently total ${totalMinutes} min`}>
-            <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} min="15" max="180" className="input-base" />
+            <input type="number" inputMode="decimal" value={duration} onChange={(e) => setDuration(e.target.value)} min="15" max="180" className="input-base" />
           </FormField>
 
           {error && <div className="text-sm text-crimson">{error}</div>}
@@ -234,7 +234,7 @@ export function PracticePlanEditorClient({ plan, initialItems, availableDrills }
                     <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
                       Duration:
                       <input
-                        type="number"
+                        type="number" inputMode="decimal"
                         value={item.duration_override ?? ''}
                         onChange={(e) => updateDuration(idx, e.target.value)}
                         placeholder={item.drill?.duration_minutes?.toString() ?? '—'}
@@ -473,7 +473,7 @@ function CreateDrillForm({ onCreated, onCancel }: { onCreated: (drill: Available
 
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Duration (min)">
-          <input type="number" name="duration_minutes" min="1" max="90" placeholder="15" className="input-base" />
+          <input type="number" inputMode="decimal" name="duration_minutes" min="1" max="90" placeholder="15" className="input-base" />
         </FormField>
         <FormField label="Age groups" help="Comma-separated">
           <input type="text" name="age_groups" placeholder="U12, U14" className="input-base" />
@@ -521,7 +521,7 @@ function SkillModal({ open, onClose, onAdd }: { open: boolean; onClose: () => vo
           />
         </FormField>
         <FormField label="Duration (min)">
-          <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} min="1" max="90" className="input-base" />
+          <input type="number" inputMode="decimal" value={duration} onChange={(e) => setDuration(e.target.value)} min="1" max="90" className="input-base" />
         </FormField>
 
         <div className="flex justify-end gap-2 pt-4 border-t border-ink-hair">

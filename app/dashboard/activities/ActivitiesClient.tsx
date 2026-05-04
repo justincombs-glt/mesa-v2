@@ -142,7 +142,7 @@ function NewGameModal({ open, onClose, seasonId }: { open: boolean; onClose: () 
           </FormField>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <FormField label="Home / Away">
             <select name="home_away" defaultValue="" className="input-base">
               <option value="">&mdash;</option>
@@ -151,10 +151,10 @@ function NewGameModal({ open, onClose, seasonId }: { open: boolean; onClose: () 
             </select>
           </FormField>
           <FormField label="Our score">
-            <input type="number" name="our_score" min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="our_score" min="0" className="input-base" />
           </FormField>
           <FormField label="Opp. score">
-            <input type="number" name="opp_score" min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="opp_score" min="0" className="input-base" />
           </FormField>
         </div>
 

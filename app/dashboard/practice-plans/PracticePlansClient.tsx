@@ -95,7 +95,7 @@ function CreatePlanModal({ open, onClose }: { open: boolean; onClose: () => void
           <textarea name="description" rows={3} className="input-base resize-none" />
         </FormField>
         <FormField label="Duration (min)">
-          <input type="number" name="duration_minutes" min="15" max="180" placeholder="60" className="input-base" />
+          <input type="number" inputMode="decimal" name="duration_minutes" min="15" max="180" placeholder="60" className="input-base" />
         </FormField>
 
         {error && <div className="text-sm text-crimson">{error}</div>}

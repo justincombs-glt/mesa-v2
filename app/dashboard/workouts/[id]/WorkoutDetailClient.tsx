@@ -101,7 +101,7 @@ function MetaSection({ workout, readOnly }: { workout: Activity; readOnly: boole
             <input type="time" name="starts_at" defaultValue={workout.starts_at?.slice(0, 5) ?? ''} className="input-base" />
           </FormField>
           <FormField label="Duration (min)">
-            <input type="number" name="duration_minutes" defaultValue={workout.duration_minutes ?? ''} min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="duration_minutes" defaultValue={workout.duration_minutes ?? ''} min="0" className="input-base" />
           </FormField>
         </div>
 
@@ -337,7 +337,7 @@ function ExerciseCard({ workoutExercise, roster, activityId, setMap, readOnly }:
           <div className="text-sm font-medium text-ink">{workoutExercise.exercise_title}</div>
           <div className="grid grid-cols-2 gap-2">
             <FormField label="Target sets">
-              <input type="number" name="sets" defaultValue={workoutExercise.sets ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
+              <input type="number" inputMode="decimal" name="sets" defaultValue={workoutExercise.sets ?? ''} min="0" className="input-base !h-8 text-xs font-mono" />
             </FormField>
             <FormField label="Coach notes">
               <input type="text" name="coach_notes" defaultValue={workoutExercise.coach_notes ?? ''} className="input-base !h-8 text-xs" />
@@ -506,19 +506,19 @@ function SetInputCell({ workoutExerciseId, activityId, studentId, setNumber, ini
       <div className="grid grid-cols-3 gap-1">
         <div>
           <label className="block text-[9px] font-mono uppercase tracking-wider text-ink-faint mb-0.5">Wt (lb)</label>
-          <input type="number" step="0.5" value={weight} onChange={(e) => setWeight(e.target.value)} onBlur={doSave}
+          <input type="number" inputMode="decimal" step="0.5" value={weight} onChange={(e) => setWeight(e.target.value)} onBlur={doSave}
             disabled={readOnly}
             className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-ink-hair bg-paper focus:border-crimson focus:outline-none disabled:opacity-60" />
         </div>
         <div>
           <label className="block text-[9px] font-mono uppercase tracking-wider text-ink-faint mb-0.5">Reps</label>
-          <input type="number" value={reps} onChange={(e) => setReps(e.target.value)} onBlur={doSave}
+          <input type="number" inputMode="decimal" value={reps} onChange={(e) => setReps(e.target.value)} onBlur={doSave}
             disabled={readOnly}
             className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-ink-hair bg-paper focus:border-crimson focus:outline-none disabled:opacity-60" />
         </div>
         <div>
           <label className="block text-[9px] font-mono uppercase tracking-wider text-ink-faint mb-0.5">RPE</label>
-          <input type="number" min="1" max="10" value={rpe} onChange={(e) => setRpe(e.target.value)} onBlur={doSave}
+          <input type="number" inputMode="decimal" min="1" max="10" value={rpe} onChange={(e) => setRpe(e.target.value)} onBlur={doSave}
             disabled={readOnly}
             className="w-full text-right font-mono text-xs px-1.5 py-1 rounded border border-ink-hair bg-paper focus:border-crimson focus:outline-none disabled:opacity-60" />
         </div>
@@ -567,7 +567,7 @@ function AddExerciseModal({ open, onClose, activityId, exercises, existingExerci
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Target sets">
-            <input type="number" name="sets" min="0" className="input-base" />
+            <input type="number" inputMode="decimal" name="sets" min="0" className="input-base" />
           </FormField>
         </div>
 
