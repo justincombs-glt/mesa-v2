@@ -24,10 +24,17 @@ interface Props {
    */
   readOnly?: boolean;
   /**
-   * If readOnly: the URL where "View all activities" footer link points to.
-   * Defaults to /dashboard/performance-management.
+   * If readOnly: the URL where "Manage activities" footer link points to.
+   * Defaults to /dashboard/performance-management (director's editable workbench).
+   * Coach home should pass /dashboard/practices since coach has no workbench page.
    */
   manageHref?: string;
+  /**
+   * Type filter dropdown options + activity type scope. Defaults to all three
+   * activity types. Coach home passes ['practice', 'game'] to exclude workouts.
+   * Stat cards also adjust to show only the available types.
+   */
+  availableTypes?: ActivityType[];
 }
 
 const TYPE_LABELS: Record<ActivityType, string> = {
@@ -35,6 +42,14 @@ const TYPE_LABELS: Record<ActivityType, string> = {
   practice: 'Practice',
   off_ice_workout: 'Off-Ice Workout',
 };
+
+const TYPE_LABELS_PLURAL: Record<ActivityType, string> = {
+  game: 'Games',
+  practice: 'Practices',
+  off_ice_workout: 'Off-Ice Workouts',
+};
+
+const ALL_TYPES: ActivityType[] = ['practice', 'game', 'off_ice_workout'];
 
 function startOfThisWeek(): string {
   // Monday as start of week
@@ -56,7 +71,13 @@ function endOfThisWeek(): string {
   return sunday.toISOString().slice(0, 10);
 }
 
-export function ActivityLogView({ activities, students, readOnly = false, manageHref = '/dashboard/performance-management' }: Props) {
+export function ActivityLogView({
+  activities,
+  students,
+  readOnly = false,
+  manageHref = '/dashboard/performance-management',
+  availableTypes = ALL_TYPES,
+}: Props) {
   // Initial filters: current week if readOnly (home), no date filter if editable (perf-mgmt)
   const [typeFilter, setTypeFilter] = useState<ActivityType | 'all'>('all');
   const [studentFilter, setStudentFilter] = useState<string>('all');
@@ -76,11 +97,13 @@ export function ActivityLogView({ activities, students, readOnly = false, manage
     });
   }, [activities, typeFilter, studentFilter, dateStart, dateEnd, students]);
 
-  const countsByType = useMemo(() => ({
-    game: filtered.filter((a) => a.activity_type === 'game').length,
-    practice: filtered.filter((a) => a.activity_type === 'practice').length,
-    off_ice_workout: filtered.filter((a) => a.activity_type === 'off_ice_workout').length,
-  }), [filtered]);
+  const countsByType = useMemo(() => {
+    const counts: Record<ActivityType, number> = {
+      game: 0, practice: 0, off_ice_workout: 0,
+    };
+    filtered.forEach((a) => { counts[a.activity_type] += 1; });
+    return counts;
+  }, [filtered]);
 
   const resetToThisWeek = () => {
     setDateStart(startOfThisWeek());
@@ -102,12 +125,19 @@ export function ActivityLogView({ activities, students, readOnly = false, manage
     );
   }
 
+  // Tailwind JIT can't extract dynamic class names, so map availableTypes count to a static class
+  const gridColsClass = availableTypes.length === 1
+    ? 'md:grid-cols-1'
+    : availableTypes.length === 2
+    ? 'md:grid-cols-2'
+    : 'md:grid-cols-3';
+
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-        <StatCard label="Practices" value={countsByType.practice} />
-        <StatCard label="Games" value={countsByType.game} />
-        <StatCard label="Off-Ice Workouts" value={countsByType.off_ice_workout} />
+      <div className={`grid grid-cols-1 ${gridColsClass} gap-3 mb-6`}>
+        {availableTypes.map((t) => (
+          <StatCard key={t} label={TYPE_LABELS_PLURAL[t]} value={countsByType[t]} />
+        ))}
       </div>
 
       <div className="flex flex-col md:flex-row md:flex-wrap gap-3 mb-6 p-4 bg-paper border border-ink-hair rounded-xl">
@@ -116,9 +146,9 @@ export function ActivityLogView({ activities, students, readOnly = false, manage
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as ActivityType | 'all')}
             className="input-base !h-9 text-xs md:!w-auto">
             <option value="all">All types</option>
-            <option value="game">Games</option>
-            <option value="practice">Practices</option>
-            <option value="off_ice_workout">Off-Ice Workouts</option>
+            {availableTypes.map((t) => (
+              <option key={t} value={t}>{TYPE_LABELS_PLURAL[t]}</option>
+            ))}
           </select>
         </div>
         <div>

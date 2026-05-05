@@ -118,14 +118,22 @@ function navForRole(role: AppRole): NavSection[] {
       ];
     case 'coach':
       return [
-        { group: null, items: [
-          home,
-          { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
-          { href: '/dashboard/practices', label: 'Practices', icon: icons.practices },
-          { href: '/dashboard/activities', label: 'Activities', icon: icons.activities },
-          { href: '/dashboard/students', label: 'Students', icon: icons.family },
-          settings,
-        ]},
+        { group: null, items: [home] },
+        {
+          group: 'Practice Management',
+          items: [
+            { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
+            { href: '/dashboard/practice-plans', label: 'Practice Templates', icon: icons.practices },
+            { href: '/dashboard/practices', label: 'Practices', icon: icons.practices },
+          ],
+        },
+        {
+          group: 'Game Review',
+          items: [
+            { href: '/dashboard/activities', label: 'Game Review', icon: icons.activities },
+          ],
+        },
+        { group: null, items: [settings] },
       ];
     case 'trainer':
       return [
