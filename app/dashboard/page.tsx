@@ -31,6 +31,9 @@ export default async function DashboardHome() {
   if (profile.role === 'coach') {
     return <CoachHome profileName={displayNameOf(profile)} />;
   }
+  if (profile.role === 'trainer') {
+    return <TrainerHome profileName={displayNameOf(profile)} />;
+  }
 
   return (
     <>
@@ -233,6 +236,34 @@ async function CoachHome({ profileName }: { profileName: string }) {
         readOnly={true}
         availableTypes={['practice', 'game']}
         manageHref="/dashboard/practices"
+      />
+    </>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Trainer home — read-only activity log for current week, off-ice workouts only
+// ----------------------------------------------------------------------------
+
+async function TrainerHome({ profileName }: { profileName: string }) {
+  const seasonCtx = await getSeasonContext();
+  const seasonId = seasonCtx.selected?.id ?? null;
+  // Trainer sees off-ice workouts only — practices and games are coach's domain
+  const { activities, students } = await fetchActivityLogData(seasonId, ['practice', 'game']);
+
+  return (
+    <>
+      <PageHeader
+        kicker={`Trainer · ${seasonCtx.selected?.name ?? 'No season'}`}
+        title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
+        description="This week at a glance — off-ice workouts. Read-only here. To make changes, use Training in the sidebar."
+      />
+      <ActivityLogView
+        activities={activities}
+        students={students}
+        readOnly={true}
+        availableTypes={['off_ice_workout']}
+        manageHref="/dashboard/workouts"
       />
     </>
   );
