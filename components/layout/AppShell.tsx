@@ -137,15 +137,22 @@ function navForRole(role: AppRole): NavSection[] {
       ];
     case 'trainer':
       return [
-        { group: null, items: [
-          home,
-          { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
-          { href: '/dashboard/workout-plans', label: 'Workout Plans', icon: icons.practices },
-          { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
-          { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
-          { href: '/dashboard/students', label: 'Students', icon: icons.family },
-          settings,
-        ]},
+        { group: null, items: [home] },
+        {
+          group: 'Training',
+          items: [
+            { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
+            { href: '/dashboard/workout-plans', label: 'Workout Templates', icon: icons.practices },
+            { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
+          ],
+        },
+        {
+          group: 'Performance Testing',
+          items: [
+            { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
+          ],
+        },
+        { group: null, items: [settings] },
       ];
     case 'student':
       return [
