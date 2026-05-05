@@ -145,6 +145,16 @@ export default async function WorkoutDetailPage({ params }: { params: { id: stri
         }
         title={<em className="italic">{workout.title || 'Workout'}</em>}
         description={formatWorkoutHeader(workout)}
+        actions={
+          <Link href={`/dashboard/workouts/${workout.id}/mobile`}
+            className="btn-secondary !h-10 !px-4 text-[13px] flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2"/>
+              <line x1="12" y1="18" x2="12.01" y2="18"/>
+            </svg>
+            Mobile mode →
+          </Link>
+        }
       />
       <WorkoutDetailClient
         workout={workout}
