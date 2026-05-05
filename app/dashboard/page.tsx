@@ -1,14 +1,17 @@
 import Link from 'next/link';
 import { requireProfile, displayNameOf } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StudentDashboardView } from '@/components/student/StudentDashboardView';
+import { ActivityLogView } from '@/components/activity-log/ActivityLogView';
 import { AddChildButton } from './family/AddChildButton';
 import {
   getLinkedStudentForProfile,
   getLinkedStudentsForParent,
   buildStudentDashboard,
 } from '@/lib/student-dashboard';
+import { fetchActivityLogData } from '@/lib/activity-log';
 import type { AppRole, Student } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
@@ -21,6 +24,9 @@ export default async function DashboardHome() {
   }
   if (profile.role === 'parent') {
     return <ParentHome profileId={profile.id} profileName={displayNameOf(profile)} />;
+  }
+  if (profile.role === 'director') {
+    return <DirectorHome profileName={displayNameOf(profile)} />;
   }
 
   return (
@@ -178,4 +184,25 @@ function staffCopy(role: AppRole): string {
     default:
       return '';
   }
+}
+
+// ----------------------------------------------------------------------------
+// Director home — read-only activity log scoped to current week
+// ----------------------------------------------------------------------------
+
+async function DirectorHome({ profileName }: { profileName: string }) {
+  const seasonCtx = await getSeasonContext();
+  const seasonId = seasonCtx.selected?.id ?? null;
+  const { activities, students } = await fetchActivityLogData(seasonId);
+
+  return (
+    <>
+      <PageHeader
+        kicker={`Director · ${seasonCtx.selected?.name ?? 'No season'}`}
+        title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
+        description="This week at a glance — practices, games, and off-ice workouts. Read-only here. To make changes, head to Performance Management."
+      />
+      <ActivityLogView activities={activities} students={students} readOnly={true} />
+    </>
+  );
 }
