@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { requireRole } from '@/lib/auth';
 import type { AppRole, GoalDomain, GoalCategory } from '@/lib/supabase/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
