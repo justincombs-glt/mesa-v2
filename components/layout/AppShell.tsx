@@ -4,6 +4,7 @@ import type { AppRole, Season } from '@/lib/supabase/types';
 import { SignOutButton } from './SignOutButton';
 import { SeasonSelector } from './SeasonSelector';
 import { MobileNavDrawer } from './MobileNavDrawer';
+import { SidebarNav } from './SidebarNav';
 
 interface AppShellProps {
   role: AppRole;
@@ -22,7 +23,13 @@ interface NavLink {
   icon: ReactNode;
 }
 
-function navForRole(role: AppRole): NavLink[] {
+export interface NavSection {
+  /** Group label. null = ungrouped (rendered as flat items, no expand/collapse). */
+  group: string | null;
+  items: NavLink[];
+}
+
+function navForRole(role: AppRole): NavSection[] {
   const icons = {
     home: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>),
     family: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="7" r="2"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2M17 13a3 3 0 013 3v2"/></svg>),
@@ -45,60 +52,91 @@ function navForRole(role: AppRole): NavLink[] {
   switch (role) {
     case 'admin':
       return [
-        home,
-        { href: '/dashboard/users', label: 'Users', icon: icons.users },
-        { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
-        { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
-        { href: '/dashboard/goal-templates', label: 'Goal Templates', icon: icons.goals },
-        { href: '/dashboard/performance-tests', label: 'Performance Tests', icon: icons.tests },
-        { href: '/dashboard/composite-performance-tests', label: 'Composite Tests', icon: icons.performance },
-        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
-        { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
-        settings,
+        { group: null, items: [home] },
+        {
+          group: 'Administration',
+          items: [
+            { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
+            { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
+            { href: '/dashboard/users', label: 'Users', icon: icons.users },
+          ],
+        },
+        {
+          group: 'Goal Management',
+          items: [
+            { href: '/dashboard/goal-templates', label: 'Goals', icon: icons.goals },
+          ],
+        },
+        {
+          group: 'Performance Management',
+          items: [
+            { href: '/dashboard/performance-tests', label: 'Performance Tests', icon: icons.tests },
+            { href: '/dashboard/composite-performance-tests', label: 'Athletic Performance Assessments', icon: icons.performance },
+            { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
+          ],
+        },
+        {
+          group: 'Training Library',
+          items: [
+            { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
+            { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
+          ],
+        },
+        { group: null, items: [settings] },
       ];
     case 'director':
       return [
-        home,
-        { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
-        { href: '/dashboard/students', label: 'Students', icon: icons.family },
-        { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
-        { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
-        { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
-        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
-        { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
-        settings,
+        { group: null, items: [
+          home,
+          { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
+          { href: '/dashboard/students', label: 'Students', icon: icons.family },
+          { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
+          { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
+          { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
+          { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
+          { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
+          settings,
+        ]},
       ];
     case 'coach':
       return [
-        home,
-        { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
-        { href: '/dashboard/practices', label: 'Practices', icon: icons.practices },
-        { href: '/dashboard/activities', label: 'Activities', icon: icons.activities },
-        { href: '/dashboard/students', label: 'Students', icon: icons.family },
-        settings,
+        { group: null, items: [
+          home,
+          { href: '/dashboard/drills', label: 'Drills', icon: icons.drills },
+          { href: '/dashboard/practices', label: 'Practices', icon: icons.practices },
+          { href: '/dashboard/activities', label: 'Activities', icon: icons.activities },
+          { href: '/dashboard/students', label: 'Students', icon: icons.family },
+          settings,
+        ]},
       ];
     case 'trainer':
       return [
-        home,
-        { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
-        { href: '/dashboard/workout-plans', label: 'Workout Plans', icon: icons.practices },
-        { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
-        { href: '/dashboard/cpt-sessions', label: 'CPT Sessions', icon: icons.tests },
-        { href: '/dashboard/students', label: 'Students', icon: icons.family },
-        settings,
+        { group: null, items: [
+          home,
+          { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
+          { href: '/dashboard/workout-plans', label: 'Workout Plans', icon: icons.practices },
+          { href: '/dashboard/workouts', label: 'Off-Ice Workouts', icon: icons.workouts },
+          { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
+          { href: '/dashboard/students', label: 'Students', icon: icons.family },
+          settings,
+        ]},
       ];
     case 'student':
       return [
-        home,
-        { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
-        { href: '/dashboard/my-performance', label: 'My Performance', icon: icons.performance },
-        settings,
+        { group: null, items: [
+          home,
+          { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
+          { href: '/dashboard/my-performance', label: 'My Performance', icon: icons.performance },
+          settings,
+        ]},
       ];
     case 'parent':
       return [
-        home,
-        { href: '/dashboard/family', label: 'My Family', icon: icons.family },
-        settings,
+        { group: null, items: [
+          home,
+          { href: '/dashboard/family', label: 'My Family', icon: icons.family },
+          settings,
+        ]},
       ];
   }
 }
@@ -148,26 +186,7 @@ export function AppShell({ role, email, displayName, children, currentPath, sele
         )}
 
         {/* Nav items */}
-        <nav className="flex flex-col gap-0.5 px-3 py-4 flex-1">
-          {nav.map((item) => {
-            const active = currentPath === item.href ||
-              (item.href !== '/dashboard' && currentPath?.startsWith(item.href));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-ink text-paper'
-                    : 'text-ink-dim hover:bg-ivory hover:text-ink'
-                }`}
-              >
-                <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <SidebarNav sections={nav} currentPath={currentPath} storageKey="desktop" />
 
         {/* User block */}
         <div className="flex flex-col gap-3 px-5 py-5 border-t border-ink-hair">

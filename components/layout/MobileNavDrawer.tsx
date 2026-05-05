@@ -2,19 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
 import { SignOutButton } from './SignOutButton';
 import { SeasonSelector } from './SeasonSelector';
+import { SidebarNav } from './SidebarNav';
+import type { NavSection } from './AppShell';
 import type { AppRole, Season } from '@/lib/supabase/types';
 
-interface NavLink {
-  href: string;
-  label: string;
-  icon: ReactNode;
-}
-
 interface Props {
-  nav: NavLink[];
+  nav: NavSection[];
   role: AppRole;
   email: string;
   displayName: string;
@@ -141,27 +136,12 @@ export function MobileNavDrawer({
         )}
 
         {/* Nav links */}
-        <nav className="flex flex-col gap-0.5 px-3 py-4 flex-1 overflow-y-auto">
-          {nav.map((item) => {
-            const active = currentPath === item.href ||
-              (item.href !== '/dashboard' && currentPath?.startsWith(item.href));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-ink text-paper'
-                    : 'text-ink-dim active:bg-ivory hover:bg-ivory hover:text-ink'
-                }`}
-              >
-                <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <SidebarNav
+          sections={nav}
+          currentPath={currentPath}
+          onNavigate={() => setOpen(false)}
+          storageKey="mobile"
+        />
 
         {/* User block */}
         <div className="flex flex-col gap-3 px-5 py-5 border-t border-ink-hair">
