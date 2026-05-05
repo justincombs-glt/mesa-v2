@@ -184,7 +184,7 @@ function CPTFormModal({
           <input type="text" name="title" defaultValue={composite?.title ?? ''} required placeholder="e.g. Fall Baseline, Pro Day, Mid-Season" className="input-base" />
         </FormField>
 
-        <FormField label="Description" help="What's this CPT for? When is it run?">
+        <FormField label="Description" help="What's this assessment for? When is it run?">
           <textarea name="description" defaultValue={composite?.description ?? ''} rows={2} className="input-base resize-none" />
         </FormField>
 

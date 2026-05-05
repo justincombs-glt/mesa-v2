@@ -108,7 +108,7 @@ export default async function CptSessionDetailPage({ params }: { params: { id: s
       <PageHeader
         kicker={
           <>
-            <Link href="/dashboard/cpt-sessions" className="hover:text-ink">CPT Sessions</Link>
+            <Link href="/dashboard/cpt-sessions" className="hover:text-ink">APA Sessions</Link>
             <span className="mx-2">·</span>
             Session
           </>

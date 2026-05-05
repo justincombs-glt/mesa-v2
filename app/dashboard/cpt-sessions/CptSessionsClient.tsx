@@ -29,7 +29,7 @@ export function CptSessionsClient({ sessions, composites, seasonId, seasonArchiv
       : !seasonId
       ? 'No active season'
       : composites.length === 0
-      ? 'No composite tests defined — ask admin to create one'
+      ? 'No assessments defined — ask admin to create one'
       : '';
     return (
       <>
@@ -57,7 +57,7 @@ export function CptSessionsClient({ sessions, composites, seasonId, seasonArchiv
       <div className="card-base p-10 text-center">
         <h3 className="font-serif text-xl text-ink mb-2">No CPT sessions recorded yet</h3>
         <p className="text-sm text-ink-dim max-w-md mx-auto">
-          Start a new session above. Pick a composite, set the date, and mark it as the season baseline if this is the first round of testing.
+          Start a new session above. Pick an assessment, set the date, and mark it as the season baseline if this is the first round of testing.
         </p>
       </div>
     );
@@ -131,12 +131,12 @@ function NewSessionModal({ open, onClose, composites, seasonId }: {
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <Modal open={open} onClose={onClose} title="Start a CPT session"
-      description="Pick a composite test and date. Record individual results on the next screen.">
+    <Modal open={open} onClose={onClose} title="Start an assessment session"
+      description="Pick an assessment and date. Record individual results on the next screen.">
       <form action={handleSubmit} className="flex flex-col gap-4">
-        <FormField label="Composite test" required>
+        <FormField label="Assessment" required>
           <select name="composite_id" required defaultValue="" className="input-base">
-            <option value="" disabled>Select a composite test…</option>
+            <option value="" disabled>Select an assessment…</option>
             {composites.map((c) => (
               <option key={c.id} value={c.id}>{c.title}</option>
             ))}

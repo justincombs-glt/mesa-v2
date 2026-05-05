@@ -56,9 +56,9 @@ export default async function CptSessionsPage() {
   return (
     <>
       <PageHeader
-        kicker={seasonCtx.selected ? `Trainer · CPT Sessions · ${seasonCtx.selected.name}` : 'Trainer · CPT Sessions'}
-        title={<><em className="italic text-crimson">Composite</em> testing.</>}
-        description="Record composite performance test sessions — vertical jump, sprint, agility, strength — all at once. Mark one session per composite as the season baseline; subsequent sessions track progress."
+        kicker={seasonCtx.selected ? `Trainer · APA Sessions · ${seasonCtx.selected.name}` : 'Trainer · APA Sessions'}
+        title={<>Assessment <em className="italic text-crimson">sessions</em>.</>}
+        description="Record athletic performance assessment sessions — vertical jump, sprint, agility, strength — all at once. Mark one session per assessment as the season baseline; subsequent sessions track progress."
         actions={
           <CptSessionsClient
             sessions={[]}

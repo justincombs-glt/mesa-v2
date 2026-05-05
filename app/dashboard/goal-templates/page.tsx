@@ -15,8 +15,8 @@ export default async function GoalTemplatesPage() {
   return (
     <>
       <PageHeader
-        kicker="Admin · Goal Templates"
-        title={<>Goal <em className="italic text-crimson">template library</em>.</>}
+        kicker="Admin · Goals"
+        title={<>Goal <em className="italic text-crimson">library</em>.</>}
         description="Reusable goal examples. The director picks from these when building a student's goal management plan."
         actions={<GoalTemplatesClient templates={[]} addOnly />}
       />

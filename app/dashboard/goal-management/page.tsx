@@ -76,7 +76,7 @@ export default async function GoalManagementPage() {
       <PageHeader
         kicker={seasonCtx.selected ? `Director · Goal Management · ${seasonCtx.selected.name}` : 'Director · Goal Management'}
         title={<>Goal <em className="italic text-crimson">plans</em>.</>}
-        description="Each student can have a multi-goal plan with attached composite performance tests and formal reviews. Goals are limited to 1–3 per plan so focus stays clear."
+        description="Each student can have a multi-goal plan with attached athletic performance assessments and formal reviews. Goals are limited to 1–3 per plan so focus stays clear."
         actions={<GoalManagementClient plans={[]} students={students} seasonId={seasonId ?? null} seasonArchived={seasonCtx.isArchived} addOnly />}
       />
       <GoalManagementClient plans={rows} students={students} seasonId={seasonId ?? null} seasonArchived={seasonCtx.isArchived} />

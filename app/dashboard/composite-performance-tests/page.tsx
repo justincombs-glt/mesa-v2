@@ -45,9 +45,9 @@ export default async function CompositeTestsPage() {
   return (
     <>
       <PageHeader
-        kicker="Admin · Composite Performance Tests"
-        title={<>Composite <em className="italic text-crimson">performance tests</em>.</>}
-        description="A composite performance test (CPT) bundles several individual tests into one standard evaluation. Trainers administer them as a session — recording all the sub-test values for each student at once."
+        kicker="Admin · Athletic Performance Assessments"
+        title={<>Athletic <em className="italic text-crimson">performance assessments</em>.</>}
+        description="An athletic performance assessment (APA) bundles several individual tests into one standard evaluation. Trainers administer them as a session — recording all the sub-test values for each student at once."
         actions={<CompositeTestsClient composites={[]} availableTests={tests} addOnly />}
       />
       <CompositeTestsClient composites={composed} availableTests={tests} />

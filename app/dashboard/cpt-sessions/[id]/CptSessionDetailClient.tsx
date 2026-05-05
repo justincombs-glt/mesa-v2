@@ -128,7 +128,7 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
         <div className="kicker mb-4">Results grid</div>
         <div className="card-base p-8 text-center">
           <p className="text-sm text-ink-dim max-w-md mx-auto">
-            This composite test has no individual tests attached. Go back to <strong className="text-ink">Composite Performance Tests</strong> and edit the composite to add tests before recording results.
+            This assessment has no individual tests attached. Go back to <strong className="text-ink">Athletic Performance Assessments</strong> and edit it to add tests before recording results.
           </p>
         </div>
       </section>

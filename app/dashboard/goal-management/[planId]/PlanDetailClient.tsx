@@ -71,7 +71,7 @@ function PlanMetaSection({ plan, readOnly }: { plan: GoalPlan; readOnly: boolean
   };
 
   const handleDelete = async () => {
-    if (!confirm('Delete this goal plan? All goals, composites, and reviews will be lost.')) return;
+    if (!confirm('Delete this goal plan? All goals, assessments, and reviews will be lost.')) return;
     const fd = new FormData();
     fd.set('id', plan.id);
     await deleteGoalPlan(fd);
@@ -496,12 +496,12 @@ function CompositesSection({ plan, attachedComposites, availableComposites, read
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
-        <div className="kicker">Performance tests · {attachedComposites.length} composite{attachedComposites.length === 1 ? '' : 's'}</div>
+        <div className="kicker">Performance tests · {attachedComposites.length} assessment{attachedComposites.length === 1 ? '' : 's'}</div>
         {!readOnly && (
           <button onClick={() => setAttachOpen(true)} className="btn-secondary !h-9 text-xs"
             disabled={availableComposites.length === 0}
-            title={availableComposites.length === 0 ? 'All composites attached, or none defined' : ''}>
-            + Attach composite
+            title={availableComposites.length === 0 ? 'All assessments attached, or none defined' : ''}>
+            + Attach assessment
           </button>
         )}
       </div>
@@ -509,7 +509,7 @@ function CompositesSection({ plan, attachedComposites, availableComposites, read
       {attachedComposites.length === 0 ? (
         <div className="card-base p-8 text-center">
           <p className="text-sm text-ink-dim max-w-md mx-auto">
-            No composite tests attached to this plan. Attach a composite (like &ldquo;Fall Baseline&rdquo;) to track progress across its sub-tests. Sessions recorded during this season appear as columns against the baseline.
+            No assessments attached to this plan. Attach an assessment (like &ldquo;Fall Baseline&rdquo;) to track progress across its sub-tests. Sessions recorded during this season appear as columns against the baseline.
           </p>
         </div>
       ) : (
@@ -670,11 +670,11 @@ function AttachCompositeModal({ open, onClose, plan, availableComposites }: {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Attach a composite" description="Pick a composite performance test to track on this plan.">
+    <Modal open={open} onClose={onClose} title="Attach an assessment" description="Pick an athletic performance assessment to track on this plan.">
       <div className="flex flex-col gap-4">
         <FormField label="Composite" required>
           <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} required className="input-base">
-            <option value="" disabled>Choose a composite&hellip;</option>
+            <option value="" disabled>Choose an assessment&hellip;</option>
             {availableComposites.map((c) => (
               <option key={c.id} value={c.id}>{c.title}</option>
             ))}
