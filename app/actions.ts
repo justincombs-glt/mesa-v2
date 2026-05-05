@@ -541,42 +541,121 @@ export async function reactivateStudent(formData: FormData) {
   return { ok: true };
 }
 
-// Link student's profile (when a student self-registers and director links them)
+// ============================================================================
+// Profile search for autocomplete in linking UI (admin/director only)
+// ============================================================================
+
+export interface ProfileSearchResult {
+  id: string;
+  full_name: string | null;
+  email: string;
+  role: AppRole;
+}
+
+export async function searchProfilesByEmail(formData: FormData): Promise<{
+  ok: boolean;
+  results?: ProfileSearchResult[];
+  error?: string;
+}> {
+  await requireRole('admin', 'director');
+  const supabase = createClient();
+  const query = String(formData.get('q') ?? '').trim().toLowerCase();
+  const roleFilter = String(formData.get('role') ?? '').trim() as AppRole | '';
+
+  if (query.length < 2) return { ok: true, results: [] };
+
+  // Search by email OR full_name (case-insensitive prefix match)
+  // Limit 10; profiles table has unique email so duplicates won't happen
+  let q = supabase
+    .from('profiles')
+    .select('id, full_name, email, role')
+    .or(`email.ilike.${query}%,full_name.ilike.%${query}%`)
+    .limit(10);
+
+  if (roleFilter) {
+    q = q.eq('role', roleFilter);
+  }
+
+  const { data, error } = await q;
+  if (error) return { ok: false, error: error.message };
+
+  const rows = (data ?? []) as ProfileSearchResult[];
+  return { ok: true, results: rows };
+}
+
+// ============================================================================
+// Link a student-role profile to a student record (admin/director)
+//
+// Edge cases:
+//   - Profile not found → "No account found, send invite" suggestion
+//   - Role mismatch → block
+//   - Sub-13 student → block (age gate)
+//   - Student record already has a profile_id → block; tell director to unlink first
+//   - Linking yourself → block (director can't be a "student" of an academy they run)
+// ============================================================================
+
 export async function linkStudentProfile(formData: FormData) {
+  const me = await requireRole('admin', 'director');
   const supabase = createClient();
   const student_id = String(formData.get('student_id') ?? '').trim();
+  // Accept either profile_id (from autocomplete) OR profile_email (fallback / legacy)
+  const profile_id_input = String(formData.get('profile_id') ?? '').trim();
   const profile_email = String(formData.get('profile_email') ?? '').trim().toLowerCase();
 
-  if (!student_id || !profile_email) return { ok: false, error: 'Missing fields' };
+  if (!student_id) return { ok: false, error: 'Missing student id' };
+  if (!profile_id_input && !profile_email) return { ok: false, error: 'Pick a user to link.' };
 
-  // Age gate: sub-13 students cannot have their own login account (Q2 = C)
+  // Age gate: sub-13 students cannot have their own login account (Q2 = C from Phase 6a)
   const { data: studentRow } = await supabase
-    .from('students').select('date_of_birth, full_name').eq('id', student_id).single();
-  if (studentRow) {
-    const s = studentRow as { date_of_birth: string | null; full_name: string };
-    if (s.date_of_birth) {
-      const dob = new Date(s.date_of_birth);
-      const thirteenYearsAgo = new Date();
-      thirteenYearsAgo.setFullYear(thirteenYearsAgo.getFullYear() - 13);
-      if (dob > thirteenYearsAgo) {
-        return {
-          ok: false,
-          error: `${s.full_name} is under 13. Minor students can't have their own login account — link a parent to the student record instead.`,
-        };
-      }
+    .from('students').select('date_of_birth, full_name, profile_id').eq('id', student_id).single();
+  if (!studentRow) return { ok: false, error: 'Student not found.' };
+  const s = studentRow as { date_of_birth: string | null; full_name: string; profile_id: string | null };
+
+  if (s.date_of_birth) {
+    const dob = new Date(s.date_of_birth);
+    const thirteenYearsAgo = new Date();
+    thirteenYearsAgo.setFullYear(thirteenYearsAgo.getFullYear() - 13);
+    if (dob > thirteenYearsAgo) {
+      return {
+        ok: false,
+        error: `${s.full_name} is under 13. Minor students can't have their own login account — link a parent to the student record instead.`,
+      };
     }
   }
 
-  const { data: profileRow } = await supabase
-    .from('profiles').select('id, role').eq('email', profile_email).single();
-
-  if (!profileRow) {
-    return { ok: false, error: `No account found for ${profile_email}. The student must sign up first.` };
+  // Block: student record already linked to a different profile
+  if (s.profile_id) {
+    return {
+      ok: false,
+      error: `${s.full_name} is already linked to a user account. Unlink the current account before linking a new one.`,
+    };
   }
 
-  const profile = profileRow as { id: string; role: AppRole };
+  // Resolve profile (by id or email)
+  let profileQuery = supabase.from('profiles').select('id, role, email');
+  if (profile_id_input) {
+    profileQuery = profileQuery.eq('id', profile_id_input);
+  } else {
+    profileQuery = profileQuery.eq('email', profile_email);
+  }
+  const { data: profileRow } = await profileQuery.single();
+
+  if (!profileRow) {
+    const target = profile_email || profile_id_input;
+    return {
+      ok: false,
+      error: `No account found for ${target}. They must sign up first — or send them an invite.`,
+    };
+  }
+
+  const profile = profileRow as { id: string; role: AppRole; email: string };
   if (profile.role !== 'student') {
-    return { ok: false, error: `${profile_email} has role "${profile.role}", not student.` };
+    return { ok: false, error: `${profile.email} has role "${profile.role}", not student.` };
+  }
+
+  // Block: linking yourself
+  if (profile.id === me.id) {
+    return { ok: false, error: `You can't link your own account as a student.` };
   }
 
   const { error } = await (supabase.from('students') as Any)
@@ -588,6 +667,7 @@ export async function linkStudentProfile(formData: FormData) {
 }
 
 export async function unlinkStudentProfile(formData: FormData) {
+  await requireRole('admin', 'director');
   const supabase = createClient();
   const student_id = String(formData.get('student_id') ?? '').trim();
   const { error } = await (supabase.from('students') as Any)
@@ -598,11 +678,25 @@ export async function unlinkStudentProfile(formData: FormData) {
   return { ok: true };
 }
 
-// Family link (parent <-> student)
+// ============================================================================
+// Link a parent-role profile to a student record (admin/director)
+//
+// Many-to-many via family_links. Uses ON CONFLICT-style idempotency check
+// (the unique constraint on (parent_id, student_id) gives a friendly error).
+//
+// Edge cases:
+//   - Profile not found → "No account found, send invite" suggestion
+//   - Wrong role → block
+//   - Already linked (same parent + same student) → friendly idempotent message
+//   - Linking yourself → block
+// ============================================================================
 
 export async function linkParent(formData: FormData) {
+  const me = await requireRole('admin', 'director');
   const supabase = createClient();
   const student_id = String(formData.get('student_id') ?? '').trim();
+  // Accept either profile_id (from autocomplete) OR parent_email (fallback / legacy)
+  const profile_id_input = String(formData.get('profile_id') ?? '').trim();
   const parent_email = String(formData.get('parent_email') ?? '').trim().toLowerCase();
   const relationship_raw = String(formData.get('relationship') ?? 'guardian').trim() || 'guardian';
   const relationship_other = String(formData.get('relationship_other') ?? '').trim() || null;
@@ -612,18 +706,43 @@ export async function linkParent(formData: FormData) {
     ? (relationship_other || 'Other')
     : relationship_raw;
 
-  if (!student_id || !parent_email) return { ok: false, error: 'Missing fields' };
+  if (!student_id) return { ok: false, error: 'Missing student id' };
+  if (!profile_id_input && !parent_email) return { ok: false, error: 'Pick a user to link.' };
 
-  const { data: parentRow } = await supabase
-    .from('profiles').select('id, role').eq('email', parent_email).single();
+  // Resolve profile (by id or email)
+  let profileQuery = supabase.from('profiles').select('id, role, email');
+  if (profile_id_input) {
+    profileQuery = profileQuery.eq('id', profile_id_input);
+  } else {
+    profileQuery = profileQuery.eq('email', parent_email);
+  }
+  const { data: profileRow } = await profileQuery.single();
 
-  if (!parentRow) {
-    return { ok: false, error: `No account found for ${parent_email}. Parent must sign up first (or invite them).` };
+  if (!profileRow) {
+    const target = parent_email || profile_id_input;
+    return {
+      ok: false,
+      error: `No account found for ${target}. Parent must sign up first — or send them an invite.`,
+    };
   }
 
-  const parent = parentRow as { id: string; role: AppRole };
-  if (parent.role !== 'parent' && parent.role !== 'admin' && parent.role !== 'director') {
-    return { ok: false, error: `${parent_email} has role "${parent.role}", not parent.` };
+  const parent = profileRow as { id: string; role: AppRole; email: string };
+  // Allow parent role specifically. Don't allow other roles to be linked as parents
+  // (they have no business in family_links — admin/director already see all students).
+  if (parent.role !== 'parent') {
+    return { ok: false, error: `${parent.email} has role "${parent.role}", not parent.` };
+  }
+
+  // Block: linking yourself
+  if (parent.id === me.id) {
+    return { ok: false, error: `You can't link your own account as a parent.` };
+  }
+
+  // Idempotent already-linked check
+  const { data: existing } = await supabase
+    .from('family_links').select('id').eq('parent_id', parent.id).eq('student_id', student_id).maybeSingle();
+  if (existing) {
+    return { ok: false, error: `${parent.email} is already linked to this student.` };
   }
 
   const { error } = await (supabase.from('family_links') as Any).insert({
@@ -636,6 +755,7 @@ export async function linkParent(formData: FormData) {
 }
 
 export async function unlinkParent(formData: FormData) {
+  await requireRole('admin', 'director');
   const supabase = createClient();
   const id = String(formData.get('id') ?? '');
   const student_id = String(formData.get('student_id') ?? '');

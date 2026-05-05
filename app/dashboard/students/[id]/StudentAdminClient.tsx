@@ -1,15 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   updateStudent, deactivateStudent, reactivateStudent,
   linkParent, unlinkParent,
   linkStudentProfile, unlinkStudentProfile,
+  searchProfilesByEmail,
 } from '@/app/actions';
-import { toFormAction } from '@/lib/form-helpers';
+import type { ProfileSearchResult } from '@/app/actions';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
-import type { Student, Profile } from '@/lib/supabase/types';
+import type { Student, Profile, AppRole } from '@/lib/supabase/types';
 import type { LinkedParent } from './page';
 
 interface Props {
@@ -123,6 +124,16 @@ function EditForm({ student }: { student: Student }) {
 function ParentLinksSection({ student, linkedParents }: { student: Student; linkedParents: LinkedParent[] }) {
   const [addOpen, setAddOpen] = useState(false);
 
+  const handleUnlink = async (lp: LinkedParent) => {
+    const name = lp.profile.full_name || lp.profile.email;
+    if (!confirm(`Unlink ${name} from ${student.full_name}? They will lose access to this student's data.`)) return;
+    const fd = new FormData();
+    fd.set('id', lp.link_id);
+    fd.set('student_id', student.id);
+    const res = await unlinkParent(fd);
+    if (!res.ok) alert(res.error ?? 'Could not unlink.');
+  };
+
   return (
     <>
       <div>
@@ -161,13 +172,13 @@ function ParentLinksSection({ student, linkedParents }: { student: Student; link
                       <div className="kicker text-[9px] mt-2 capitalize">{lp.relationship}</div>
                     )}
                   </div>
-                  <form action={toFormAction(unlinkParent)}>
-                    <input type="hidden" name="id" value={lp.link_id} />
-                    <input type="hidden" name="student_id" value={student.id} />
-                    <button type="submit" className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider">
-                      Unlink
-                    </button>
-                  </form>
+                  <button
+                    type="button"
+                    onClick={() => handleUnlink(lp)}
+                    className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider"
+                  >
+                    Unlink
+                  </button>
                 </div>
               </div>
             ))}
@@ -182,6 +193,16 @@ function ParentLinksSection({ student, linkedParents }: { student: Student; link
 
 function StudentLoginSection({ student, linkedStudentProfile }: { student: Student; linkedStudentProfile: Pick<Profile, 'id' | 'full_name' | 'email'> | null }) {
   const [linkOpen, setLinkOpen] = useState(false);
+
+  const handleUnlink = async () => {
+    if (!linkedStudentProfile) return;
+    const name = linkedStudentProfile.full_name || linkedStudentProfile.email;
+    if (!confirm(`Unlink ${name} from ${student.full_name}? They will lose access to this student's data.`)) return;
+    const fd = new FormData();
+    fd.set('student_id', student.id);
+    const res = await unlinkStudentProfile(fd);
+    if (!res.ok) alert(res.error ?? 'Could not unlink.');
+  };
 
   return (
     <>
@@ -202,12 +223,13 @@ function StudentLoginSection({ student, linkedStudentProfile }: { student: Stude
                 <div className="font-medium text-ink truncate">{linkedStudentProfile.full_name || linkedStudentProfile.email.split('@')[0]}</div>
                 <div className="text-xs text-ink-faint truncate">{linkedStudentProfile.email}</div>
               </div>
-              <form action={toFormAction(unlinkStudentProfile)}>
-                <input type="hidden" name="student_id" value={student.id} />
-                <button type="submit" className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider">
-                  Unlink
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={handleUnlink}
+                className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider"
+              >
+                Unlink
+              </button>
             </div>
           </div>
         ) : (
@@ -225,12 +247,33 @@ function StudentLoginSection({ student, linkedStudentProfile }: { student: Stude
 }
 
 function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose: () => void; student: Student }) {
+  const [picked, setPicked] = useState<ProfileSearchResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [relationship, setRelationship] = useState<string>('guardian');
 
-  const handleSubmit = async (formData: FormData) => {
+  // Reset state on open
+  useEffect(() => {
+    if (open) {
+      setPicked(null);
+      setError(null);
+      setRelationship('guardian');
+    }
+  }, [open]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!picked) {
+      setError('Pick a parent to link.');
+      return;
+    }
+
+    const name = picked.full_name || picked.email;
+    if (!confirm(`Link ${name} (${picked.email}) as a parent of ${student.full_name}? They will gain access to this student's data.`)) return;
+
+    const formData = new FormData(e.target as HTMLFormElement);
     formData.set('student_id', student.id);
+    formData.set('profile_id', picked.id);
     setSaving(true);
     setError(null);
     const res = await linkParent(formData);
@@ -241,9 +284,9 @@ function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose
 
   return (
     <Modal open={open} onClose={onClose} title="Link a parent" description={`To ${student.full_name}`}>
-      <form action={handleSubmit} className="flex flex-col gap-4">
-        <FormField label="Parent email" required help="The parent must have signed up for a MESA account first.">
-          <input type="email" name="parent_email" required placeholder="parent@example.com" className="input-base" />
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <FormField label="Find a parent" required help="Search by email or name. They must already have a parent-role MESA account.">
+          <UserPicker selected={picked} onSelect={setPicked} role="parent" />
         </FormField>
 
         <FormField label="Relationship">
@@ -271,7 +314,7 @@ function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose
 
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
+          <button type="submit" disabled={saving || !picked} className="btn-primary !h-10 text-[13px]">
             {saving ? 'Linking…' : 'Link parent'}
           </button>
         </div>
@@ -281,11 +324,30 @@ function AddParentLinkModal({ open, onClose, student }: { open: boolean; onClose
 }
 
 function LinkStudentProfileModal({ open, onClose, student }: { open: boolean; onClose: () => void; student: Student }) {
+  const [picked, setPicked] = useState<ProfileSearchResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (formData: FormData) => {
+  useEffect(() => {
+    if (open) {
+      setPicked(null);
+      setError(null);
+    }
+  }, [open]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!picked) {
+      setError('Pick a student account to link.');
+      return;
+    }
+
+    const name = picked.full_name || picked.email;
+    if (!confirm(`Link ${name} (${picked.email}) as the login account for ${student.full_name}? They will gain access to this student's own data.`)) return;
+
+    const formData = new FormData();
     formData.set('student_id', student.id);
+    formData.set('profile_id', picked.id);
     setSaving(true);
     setError(null);
     const res = await linkStudentProfile(formData);
@@ -296,20 +358,140 @@ function LinkStudentProfileModal({ open, onClose, student }: { open: boolean; on
 
   return (
     <Modal open={open} onClose={onClose} title="Link student account" description={`To ${student.full_name}`}>
-      <form action={handleSubmit} className="flex flex-col gap-4">
-        <FormField label="Student email" required help="They must have signed up at /sign-up first (age 13+ required).">
-          <input type="email" name="student_email" required placeholder="student@example.com" className="input-base" />
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <FormField label="Find a student account" required help="Search by email or name. They must already have a student-role MESA account (signed up themselves at /sign-up).">
+          <UserPicker selected={picked} onSelect={setPicked} role="student" />
         </FormField>
 
         {error && <div className="text-sm text-crimson">{error}</div>}
 
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
-            {saving ? 'Linking\u2026' : 'Link account'}
+          <button type="submit" disabled={saving || !picked} className="btn-primary !h-10 text-[13px]">
+            {saving ? 'Linking…' : 'Link account'}
           </button>
         </div>
       </form>
     </Modal>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// UserPicker — searchable autocomplete dropdown for picking a profile
+// ----------------------------------------------------------------------------
+
+function UserPicker({
+  selected, onSelect, role,
+}: {
+  selected: ProfileSearchResult | null;
+  onSelect: (p: ProfileSearchResult | null) => void;
+  role: AppRole;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<ProfileSearchResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Debounced search whenever query changes (only when nothing selected)
+  useEffect(() => {
+    if (selected) return;
+    if (query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setSearching(true);
+      setSearchError(null);
+      const fd = new FormData();
+      fd.set('q', query.trim());
+      fd.set('role', role);
+      const res = await searchProfilesByEmail(fd);
+      setSearching(false);
+      if (res.ok) {
+        setResults(res.results ?? []);
+        setOpen(true);
+      } else {
+        setSearchError(res.error ?? 'Search failed.');
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [query, role, selected]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  if (selected) {
+    return (
+      <div className="card-base p-3 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-ink truncate">{selected.full_name || selected.email.split('@')[0]}</div>
+          <div className="text-xs text-ink-faint truncate">{selected.email}</div>
+          <div className="kicker text-[9px] mt-1">{selected.role}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onSelect(null);
+            setQuery('');
+            setResults([]);
+          }}
+          className="text-[11px] font-mono uppercase tracking-wider text-ink-faint hover:text-crimson flex-shrink-0"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        placeholder={`Search by email or name (${role}s only)`}
+        className="input-base"
+        autoComplete="off"
+      />
+      {open && (results.length > 0 || searching || searchError || query.trim().length >= 2) && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-paper border border-ink-hair rounded-lg shadow-card-hover max-h-64 overflow-y-auto">
+          {searching && <div className="px-4 py-3 text-xs text-ink-faint">Searching…</div>}
+          {!searching && searchError && (
+            <div className="px-4 py-3 text-xs text-crimson">{searchError}</div>
+          )}
+          {!searching && !searchError && results.length === 0 && query.trim().length >= 2 && (
+            <div className="px-4 py-3 text-xs text-ink-dim">
+              No {role}s found for &ldquo;{query}&rdquo;.
+              {' '}
+              <a href="/dashboard/invite" className="text-crimson hover:underline">Send an invite instead?</a>
+            </div>
+          )}
+          {!searching && !searchError && results.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => {
+                onSelect(r);
+                setOpen(false);
+              }}
+              className="w-full text-left px-4 py-2.5 hover:bg-ivory transition-colors border-b border-ink-hair last:border-b-0"
+            >
+              <div className="font-medium text-ink truncate text-sm">{r.full_name || r.email.split('@')[0]}</div>
+              <div className="text-xs text-ink-faint truncate">{r.email}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
