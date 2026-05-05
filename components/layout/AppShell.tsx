@@ -47,7 +47,7 @@ function navForRole(role: AppRole): NavSection[] {
   };
 
   const home = { href: '/dashboard', label: 'Home', icon: icons.home };
-  const settings = { href: '/dashboard/settings', label: 'Profile', icon: icons.settings };
+  const settings = { href: '/dashboard/settings', label: 'User Profile', icon: icons.settings };
 
   switch (role) {
     case 'admin':
@@ -86,17 +86,35 @@ function navForRole(role: AppRole): NavSection[] {
       ];
     case 'director':
       return [
-        { group: null, items: [
-          home,
-          { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
-          { href: '/dashboard/students', label: 'Students', icon: icons.family },
-          { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
-          { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
-          { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
-          { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
-          { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
-          settings,
-        ]},
+        { group: null, items: [home] },
+        {
+          group: 'Administration',
+          items: [
+            { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
+            { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
+            { href: '/dashboard/students', label: 'Students', icon: icons.family },
+          ],
+        },
+        {
+          group: 'Goal Management',
+          items: [
+            { href: '/dashboard/goal-management', label: 'Goal Management', icon: icons.goals },
+          ],
+        },
+        {
+          group: 'Performance Management',
+          items: [
+            { href: '/dashboard/performance-management', label: 'Performance Management', icon: icons.performance },
+            { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
+          ],
+        },
+        {
+          group: 'Training Library',
+          items: [
+            { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
+          ],
+        },
+        { group: null, items: [settings] },
       ];
     case 'coach':
       return [
