@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import type { Activity, Student } from '@/lib/supabase/types';
+import type { Activity, ActivityType, Student } from '@/lib/supabase/types';
 import type { ActivityRowData } from '@/components/activity-log/ActivityLogView';
 
 export type StudentLite = Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'active'>;
@@ -14,15 +14,25 @@ export interface ActivityLogData {
  * seasonId is null) along with the active student roster. Each activity is
  * enriched with a `student_names` array of the players linked to it.
  *
+ * `excludeTypes` filters out activities of the given types at fetch time
+ * (e.g. coach view excludes 'off_ice_workout' since that's trainer's domain).
+ *
  * Used by both the director home page (read-only week view) and the
- * performance-management page (editable workbench).
+ * performance-management page (editable workbench), and by the coach home
+ * page (read-only week view, no workouts).
  */
-export async function fetchActivityLogData(seasonId: string | null): Promise<ActivityLogData> {
+export async function fetchActivityLogData(
+  seasonId: string | null,
+  excludeTypes: ActivityType[] = [],
+): Promise<ActivityLogData> {
   const supabase = createClient();
 
   let activityQuery = supabase.from('activities').select('*').order('occurred_on', { ascending: false }).limit(200);
   if (seasonId) {
     activityQuery = activityQuery.eq('season_id', seasonId);
+  }
+  if (excludeTypes.length > 0) {
+    activityQuery = activityQuery.not('activity_type', 'in', `(${excludeTypes.map((t) => `"${t}"`).join(',')})`);
   }
 
   const [{ data: activityRows }, { data: studentRows }] = await Promise.all([
