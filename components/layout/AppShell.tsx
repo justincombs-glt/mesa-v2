@@ -158,6 +158,7 @@ function navForRole(role: AppRole): NavSection[] {
       return [
         { group: null, items: [
           home,
+          { href: '/dashboard/my-workouts', label: 'My Workouts', icon: icons.workouts },
           { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
           { href: '/dashboard/my-performance', label: 'My Performance', icon: icons.performance },
           settings,

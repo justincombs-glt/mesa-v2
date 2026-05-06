@@ -79,7 +79,7 @@ export function StudentDashboardView({ data, isParentView }: Props) {
           ) : (
             <div className="card-base overflow-hidden">
               {upcomingActivities.map((a, idx) => (
-                <ActivityRow key={a.id} activity={a} first={idx === 0} />
+                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} />
               ))}
             </div>
           )}
@@ -92,7 +92,7 @@ export function StudentDashboardView({ data, isParentView }: Props) {
           ) : (
             <div className="card-base overflow-hidden">
               {recentActivities.map((a, idx) => (
-                <ActivityRow key={a.id} activity={a} first={idx === 0} />
+                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} />
               ))}
             </div>
           )}
@@ -172,7 +172,11 @@ function MetaField({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function ActivityRow({ activity, first }: { activity: import('@/lib/supabase/types').Activity; first: boolean }) {
+function ActivityRow({ activity, first, allowLog }: {
+  activity: import('@/lib/supabase/types').Activity;
+  first: boolean;
+  allowLog?: boolean;
+}) {
   const typeLabel = activity.activity_type === 'game' ? 'Game'
     : activity.activity_type === 'practice' ? 'Practice'
     : 'Off-ice';
@@ -185,8 +189,11 @@ function ActivityRow({ activity, first }: { activity: import('@/lib/supabase/typ
       ? `vs ${activity.opponent ?? 'TBD'}`
       : activity.title || (activity.activity_type === 'practice' ? 'Practice' : 'Workout');
 
-  return (
-    <div className={`flex items-center gap-3 px-4 py-3 ${first ? '' : 'border-t border-ink-hair'}`}>
+  // Off-ice workouts are tappable for student-self views: routes to /mobile logger
+  const isLoggable = allowLog && activity.activity_type === 'off_ice_workout';
+
+  const Inner = (
+    <div className={`flex items-center gap-3 px-4 py-3 ${first ? '' : 'border-t border-ink-hair'} ${isLoggable ? 'group hover:bg-ivory active:bg-ivory transition-colors' : ''}`}>
       <div className="flex-shrink-0 w-16 text-right">
         <div className="font-serif text-sm text-ink">{formatShortDate(activity.occurred_on)}</div>
         {activity.starts_at && (
@@ -202,8 +209,18 @@ function ActivityRow({ activity, first }: { activity: import('@/lib/supabase/typ
         </div>
         {activity.focus && <div className="text-xs text-ink-faint truncate">{activity.focus}</div>}
       </div>
+      {isLoggable && (
+        <div className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">
+          Log →
+        </div>
+      )}
     </div>
   );
+
+  if (isLoggable) {
+    return <Link href={`/dashboard/workouts/${activity.id}/mobile`} className="block">{Inner}</Link>;
+  }
+  return Inner;
 }
 
 function positionLabel(p: string | null): string {
