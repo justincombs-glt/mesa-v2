@@ -12,16 +12,27 @@ interface Props {
   exercises: ResolvedExercise[];
   setMap: SetMap;
   readOnly: boolean;
+  /** True when the logger is opened by a student logging their own sets. */
+  studentMode?: boolean;
+  /** Whether trash buttons appear on existing sets. False for students on multi-athlete workouts (Q7=C). */
+  canDeleteSets?: boolean;
 }
 
 const REP_CHIPS = [3, 5, 8, 10, 12, 15];
 const RPE_CHIPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-export function MobileWorkoutLogger({ workout, roster, exercises, setMap, readOnly }: Props) {
+export function MobileWorkoutLogger({
+  workout, roster, exercises, setMap, readOnly,
+  studentMode = false, canDeleteSets = true,
+}: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [hideAbsent, setHideAbsent] = useState(false);
   const [absentIds, setAbsentIds] = useState<Set<string>>(new Set());
-  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+  // For student mode (single athlete), default the card to expanded so they don't
+  // have to tap to start. For trainer mode, leave collapsed (they pick which athlete).
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(
+    studentMode && roster.length === 1 ? roster[0].id : null
+  );
 
   const activeExercise = exercises[activeIdx];
   const visibleRoster = useMemo(() => {
@@ -40,7 +51,8 @@ export function MobileWorkoutLogger({ workout, roster, exercises, setMap, readOn
   const goToNextExercise = () => {
     if (activeIdx < exercises.length - 1) {
       setActiveIdx(activeIdx + 1);
-      setExpandedStudentId(null);
+      // For student mode, keep their card expanded across exercise switches
+      setExpandedStudentId(studentMode && roster.length === 1 ? roster[0].id : null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -57,7 +69,10 @@ export function MobileWorkoutLogger({ workout, roster, exercises, setMap, readOn
             return (
               <button
                 key={ex.id}
-                onClick={() => { setActiveIdx(idx); setExpandedStudentId(null); }}
+                onClick={() => {
+                  setActiveIdx(idx);
+                  setExpandedStudentId(studentMode && roster.length === 1 ? roster[0].id : null);
+                }}
                 className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive
                     ? 'bg-ink text-paper'
@@ -72,22 +87,24 @@ export function MobileWorkoutLogger({ workout, roster, exercises, setMap, readOn
         </div>
       </div>
 
-      {/* Toggle: hide absent */}
-      <div className="px-4 pt-3 pb-1 flex items-center justify-between gap-3">
-        <div className="kicker">Athletes · {visibleRoster.length}/{roster.length}</div>
-        <label className="flex items-center gap-2 text-xs text-ink-dim cursor-pointer">
-          <input
-            type="checkbox"
-            checked={hideAbsent}
-            onChange={(e) => setHideAbsent(e.target.checked)}
-            className="w-4 h-4 accent-ink"
-          />
-          Hide absent
-        </label>
-      </div>
+      {/* Athletes header — hidden in student mode (single self only) */}
+      {!studentMode && (
+        <div className="px-4 pt-3 pb-1 flex items-center justify-between gap-3">
+          <div className="kicker">Athletes · {visibleRoster.length}/{roster.length}</div>
+          <label className="flex items-center gap-2 text-xs text-ink-dim cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hideAbsent}
+              onChange={(e) => setHideAbsent(e.target.checked)}
+              className="w-4 h-4 accent-ink"
+            />
+            Hide absent
+          </label>
+        </div>
+      )}
 
       {/* Athlete cards */}
-      <div className="flex-1 px-3 pt-2 pb-32 flex flex-col gap-2.5">
+      <div className="flex-1 px-3 pt-3 pb-32 flex flex-col gap-2.5">
         {visibleRoster.length === 0 ? (
           <div className="card-base p-6 text-center text-sm text-ink-dim mt-2">
             No athletes to show. Toggle off &quot;Hide absent&quot; to see everyone.
@@ -109,6 +126,8 @@ export function MobileWorkoutLogger({ workout, roster, exercises, setMap, readOn
                 expanded={isExpanded}
                 absent={isAbsent}
                 readOnly={readOnly}
+                studentMode={studentMode}
+                canDeleteSets={canDeleteSets}
                 onToggleExpand={() => setExpandedStudentId(isExpanded ? null : student.id)}
                 onToggleAbsent={() => toggleAbsent(student.id)}
               />
@@ -149,22 +168,25 @@ interface AthleteCardProps {
   expanded: boolean;
   absent: boolean;
   readOnly: boolean;
+  studentMode: boolean;
+  canDeleteSets: boolean;
   onToggleExpand: () => void;
   onToggleAbsent: () => void;
 }
 
 function AthleteCard({
   workoutId, exerciseId, exerciseTitle, student, sets, expanded, absent, readOnly,
+  studentMode, canDeleteSets,
   onToggleExpand, onToggleAbsent,
 }: AthleteCardProps) {
   const lastSet = sets.length > 0 ? sets[sets.length - 1] : null;
 
   return (
     <div className={`card-base overflow-hidden ${absent ? 'opacity-60' : ''}`}>
-      {/* Header row */}
+      {/* Header row — hide chevron and disable toggle in student mode (always expanded) */}
       <button
         onClick={onToggleExpand}
-        disabled={readOnly}
+        disabled={readOnly || studentMode}
         className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-ivory disabled:cursor-default disabled:active:bg-paper"
       >
         <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -179,7 +201,7 @@ function AthleteCard({
           ) : (
             <span>No sets</span>
           )}
-          {!readOnly && (
+          {!readOnly && !studentMode && (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
               <polyline points="6 9 12 15 18 9"/>
             </svg>
@@ -196,6 +218,7 @@ function AthleteCard({
               workoutId={workoutId}
               set={s}
               readOnly={readOnly}
+              canDelete={canDeleteSets}
             />
           ))}
         </div>
@@ -211,7 +234,8 @@ function AthleteCard({
           studentName={student.full_name}
           nextSetNumber={(lastSet?.set_number ?? 0) + 1}
           lastSet={lastSet}
-          onAbsent={absent ? undefined : onToggleAbsent}
+          // Mark-absent button only relevant for trainers (Q11 = parents skipped, Q5 = student sees self only)
+          onAbsent={!studentMode && !absent ? onToggleAbsent : undefined}
           isAbsent={absent}
         />
       )}
@@ -223,8 +247,8 @@ function AthleteCard({
 // SetHistoryRow — one previously-logged set
 // ----------------------------------------------------------------------------
 
-function SetHistoryRow({ workoutId, set, readOnly }: {
-  workoutId: string; set: SetCell; readOnly: boolean;
+function SetHistoryRow({ workoutId, set, readOnly, canDelete }: {
+  workoutId: string; set: SetCell; readOnly: boolean; canDelete: boolean;
 }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -247,7 +271,7 @@ function SetHistoryRow({ workoutId, set, readOnly }: {
     <div className="flex items-center gap-2 text-sm">
       <span className="kicker text-[9px] flex-shrink-0 w-10">Set {set.set_number}</span>
       <span className="flex-1 font-mono text-ink">{summary}</span>
-      {!readOnly && (
+      {!readOnly && canDelete && (
         <button
           onClick={handleDelete}
           disabled={deleting}

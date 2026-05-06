@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { requireRole } from '@/lib/auth';
+import { requireProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -36,7 +36,15 @@ export interface SetCell {
 export type SetMap = Record<string, SetCell[]>;
 
 export default async function WorkoutDetailPage({ params }: { params: { id: string } }) {
-  await requireRole('admin', 'director', 'trainer');
+  const profile = await requireProfile();
+  // Q9 = C: students get the mobile logger, not the desktop view. Redirect them
+  // to /mobile for the same workout. Other unauthorized roles bounce to /dashboard.
+  if (profile.role === 'student') {
+    redirect(`/dashboard/workouts/${params.id}/mobile`);
+  }
+  if (profile.role !== 'admin' && profile.role !== 'director' && profile.role !== 'trainer') {
+    redirect('/dashboard');
+  }
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
 
