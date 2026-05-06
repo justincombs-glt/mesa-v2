@@ -189,11 +189,18 @@ function ActivityRow({ activity, first, allowLog }: {
       ? `vs ${activity.opponent ?? 'TBD'}`
       : activity.title || (activity.activity_type === 'practice' ? 'Practice' : 'Workout');
 
-  // Off-ice workouts are tappable for student-self views: routes to /mobile logger
-  const isLoggable = allowLog && activity.activity_type === 'off_ice_workout';
+  // Tappable for non-parent student views. Off-ice routes to mobile logger;
+  // practices and games route to the read-only my-* detail pages.
+  const isTappable = !!allowLog;
+  const href = activity.activity_type === 'off_ice_workout'
+    ? `/dashboard/workouts/${activity.id}/mobile`
+    : activity.activity_type === 'practice'
+      ? `/dashboard/my-practices/${activity.id}`
+      : `/dashboard/my-games/${activity.id}`;
+  const cta = activity.activity_type === 'off_ice_workout' ? 'Log \u2192' : 'View \u2192';
 
   const Inner = (
-    <div className={`flex items-center gap-3 px-4 py-3 ${first ? '' : 'border-t border-ink-hair'} ${isLoggable ? 'group hover:bg-ivory active:bg-ivory transition-colors' : ''}`}>
+    <div className={`flex items-center gap-3 px-4 py-3 ${first ? '' : 'border-t border-ink-hair'} ${isTappable ? 'group hover:bg-ivory active:bg-ivory transition-colors' : ''}`}>
       <div className="flex-shrink-0 w-16 text-right">
         <div className="font-serif text-sm text-ink">{formatShortDate(activity.occurred_on)}</div>
         {activity.starts_at && (
@@ -209,16 +216,16 @@ function ActivityRow({ activity, first, allowLog }: {
         </div>
         {activity.focus && <div className="text-xs text-ink-faint truncate">{activity.focus}</div>}
       </div>
-      {isLoggable && (
+      {isTappable && (
         <div className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">
-          Log →
+          {cta}
         </div>
       )}
     </div>
   );
 
-  if (isLoggable) {
-    return <Link href={`/dashboard/workouts/${activity.id}/mobile`} className="block">{Inner}</Link>;
+  if (isTappable) {
+    return <Link href={href} className="block">{Inner}</Link>;
   }
   return Inner;
 }

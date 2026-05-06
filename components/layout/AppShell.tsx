@@ -156,13 +156,27 @@ function navForRole(role: AppRole): NavSection[] {
       ];
     case 'student':
       return [
-        { group: null, items: [
-          home,
-          { href: '/dashboard/my-workouts', label: 'My Workouts', icon: icons.workouts },
-          { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
-          { href: '/dashboard/my-performance', label: 'My Performance', icon: icons.performance },
-          settings,
-        ]},
+        { group: null, items: [home] },
+        {
+          group: 'Off Ice',
+          items: [
+            { href: '/dashboard/my-workouts', label: 'My Workouts', icon: icons.workouts },
+          ],
+        },
+        {
+          group: 'On Ice',
+          items: [
+            { href: '/dashboard/my-practices', label: 'Practices', icon: icons.practices },
+            { href: '/dashboard/my-games', label: 'Games', icon: icons.activities },
+          ],
+        },
+        {
+          group: 'Goal Management',
+          items: [
+            { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
+          ],
+        },
+        { group: null, items: [settings] },
       ];
     case 'parent':
       return [
