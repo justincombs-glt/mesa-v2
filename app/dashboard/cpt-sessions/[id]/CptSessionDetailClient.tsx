@@ -141,17 +141,69 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
         <div className="kicker mb-4">Results grid</div>
         <div className="card-base p-8 text-center">
           <p className="text-sm text-ink-dim max-w-md mx-auto">
-            No students enrolled in this season. Enroll students in <strong className="text-ink">Students</strong> first — then their rows will appear here.
+            No students enrolled in this season. Enroll students in <strong className="text-ink">Students</strong> first &mdash; then their rows will appear here.
           </p>
         </div>
       </section>
     );
   }
 
+  // Phase 11: split sub-tests into off-ice and on-ice. Sub-tests are tagged via
+  // performance_tests.domain. Off-ice rendered first (Q3=B), on-ice below.
+  // Single-domain composites only render the section that applies (Q2=A / Q6=A).
+  const offIceTests = data.tests.filter((t) => t.domain === 'off_ice');
+  const onIceTests = data.tests.filter((t) => t.domain === 'on_ice');
+
+  return (
+    <div className="flex flex-col gap-8">
+      {offIceTests.length > 0 && (
+        <ResultsGridSection
+          label="Off-Ice"
+          accent="bg-sage-dark"
+          data={data}
+          tests={offIceTests}
+          readOnly={readOnly}
+        />
+      )}
+      {onIceTests.length > 0 && (
+        <ResultsGridSection
+          label="On-Ice"
+          accent="bg-ink"
+          data={data}
+          tests={onIceTests}
+          readOnly={readOnly}
+        />
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// One results sub-grid for a single domain. Renders the same mobile/desktop
+// layout as the original combined grid, but only for tests that match the
+// section's domain.
+// ----------------------------------------------------------------------------
+
+function ResultsGridSection({
+  label, accent, data, tests, readOnly,
+}: {
+  label: string;
+  accent: string;
+  data: SessionData;
+  tests: SessionData['tests'];
+  readOnly: boolean;
+}) {
   return (
     <section>
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-1">
-        <div className="kicker">Results &middot; {data.students.length} student{data.students.length === 1 ? '' : 's'} &middot; {data.tests.length} test{data.tests.length === 1 ? '' : 's'}</div>
+        <div className="flex items-center gap-2.5">
+          <span className={`text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded text-paper ${accent}`}>
+            {label}
+          </span>
+          <div className="kicker">
+            {data.students.length} student{data.students.length === 1 ? '' : 's'} &middot; {tests.length} test{tests.length === 1 ? '' : 's'}
+          </div>
+        </div>
         <div className="text-[10px] font-mono tracking-wider uppercase text-ink-faint">
           Tap a value to edit &middot; Changes save automatically
         </div>
@@ -168,7 +220,7 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
               <span className="text-ink font-medium">{student.full_name}</span>
             </div>
             <div className="flex flex-col gap-2.5">
-              {data.tests.map((test) => (
+              {tests.map((test) => (
                 <div key={test.id} className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-ink truncate">{test.title}</div>
@@ -203,7 +255,7 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
               <th className="text-left px-4 py-2.5 font-medium sticky left-0 bg-paper z-10 min-w-[200px]">
                 Student
               </th>
-              {data.tests.map((t) => (
+              {tests.map((t) => (
                 <th key={t.id} className="px-2 py-2.5 font-medium text-right min-w-[110px]">
                   <div className="text-ink">{t.title}</div>
                   {t.unit && <div className="text-[9px] text-ink-faint mt-0.5 normal-case tracking-normal">{t.unit}</div>}
@@ -222,7 +274,7 @@ function ResultsGrid({ data, readOnly }: { data: SessionData; readOnly: boolean 
                     <span className="text-ink">{student.full_name}</span>
                   </div>
                 </td>
-                {data.tests.map((test) => (
+                {tests.map((test) => (
                   <ResultCellInput
                     key={test.id}
                     sessionId={data.session.id}

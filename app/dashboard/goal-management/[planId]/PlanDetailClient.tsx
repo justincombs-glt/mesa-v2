@@ -545,6 +545,12 @@ function CompositeTable({ attached, planId, readOnly }: { attached: AttachedComp
     return { delta, pctChange, improving: delta === 0 ? null : improving };
   }
 
+  // Phase 11: split sub-tests by domain. Off-ice section first (Q3=B).
+  // Single-domain composites only render the section that applies (Q6=A).
+  const sortedSubTests = [...subTests].sort((a, b) => a.sequence - b.sequence);
+  const offIceSubTests = sortedSubTests.filter((st) => st.test.domain === 'off_ice');
+  const onIceSubTests = sortedSubTests.filter((st) => st.test.domain === 'on_ice');
+
   return (
     <div className="card-base overflow-hidden">
       <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ink-hair bg-sand-50">
@@ -565,82 +571,127 @@ function CompositeTable({ attached, planId, readOnly }: { attached: AttachedComp
 
       {sessions.length === 0 ? (
         <div className="p-6 text-center text-sm text-ink-dim italic">
-          No sessions recorded yet. Results will appear as the trainer administers this composite for {/* student */ 'the student'}.
+          No sessions recorded yet. Results will appear as the trainer administers this composite for the student.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint">
-                <th className="text-left px-5 py-3 font-medium">Test</th>
-                <th className="text-left px-3 py-3 font-medium">Unit</th>
-                {baselineSession && (
-                  <th className="text-right px-3 py-3 font-medium bg-sage/5 border-l border-ink-hair">
-                    <div>Baseline</div>
-                    <div className="text-ink-mist text-[9px] normal-case mt-0.5">{formatDate(baselineSession.session.session_date)}</div>
-                  </th>
-                )}
-                {nonBaselineSessions.map((sv) => (
-                  <th key={sv.session.id} className="text-right px-3 py-3 font-medium border-l border-ink-hair">
-                    <div>{formatShortDate(sv.session.session_date)}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {subTests.sort((a, b) => a.sequence - b.sequence).map((st) => (
-                <tr key={st.test.id} className="border-t border-ink-hair">
-                  <td className="px-5 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[8px] font-mono tracking-[0.15em] uppercase px-1 py-0.5 rounded ${
-                        st.test.domain === 'on_ice' ? 'bg-ink text-paper' : 'bg-sage/10 text-sage-dark border border-sage/30'
-                      }`}>
-                        {DOMAIN_LABELS[st.test.domain]}
-                      </span>
-                      <span className="text-ink font-medium">{st.test.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-ink-faint text-xs">
-                    {st.test.unit}
-                    <div className="text-[9px] opacity-75 mt-0.5">
-                      {st.test.direction === 'higher_is_better' ? '↑ better' : '↓ better'}
-                    </div>
-                  </td>
-                  {baselineSession && (
-                    <td className="px-3 py-2.5 text-right font-mono text-ink bg-sage/5 border-l border-ink-hair">
-                      {baselineSession.results.get(st.test.id) ?? <span className="text-ink-faint">&mdash;</span>}
-                    </td>
-                  )}
-                  {nonBaselineSessions.map((sv) => {
-                    const value = sv.results.get(st.test.id);
-                    const change = computeChange(st.test.id, sv.results);
-                    return (
-                      <td key={sv.session.id} className="px-3 py-2.5 text-right font-mono border-l border-ink-hair">
-                        {value !== undefined ? (
-                          <>
-                            <div className="text-ink">{value}</div>
-                            {change.pctChange !== null && (
-                              <div className={`text-[10px] mt-0.5 ${
-                                change.improving === true ? 'text-sage-dark' :
-                                change.improving === false ? 'text-crimson' :
-                                'text-ink-faint'
-                              }`}>
-                                {change.improving === true ? '↑' : change.improving === false ? '↓' : '='} {Math.abs(change.pctChange).toFixed(1)}%
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-ink-faint">&mdash;</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col">
+          {offIceSubTests.length > 0 && (
+            <CompositeDomainTable
+              label="Off-Ice"
+              accent="bg-sage-dark"
+              subTests={offIceSubTests}
+              baselineSession={baselineSession}
+              nonBaselineSessions={nonBaselineSessions}
+              computeChange={computeChange}
+            />
+          )}
+          {onIceSubTests.length > 0 && (
+            <CompositeDomainTable
+              label="On-Ice"
+              accent="bg-ink"
+              subTests={onIceSubTests}
+              baselineSession={baselineSession}
+              nonBaselineSessions={nonBaselineSessions}
+              computeChange={computeChange}
+              hasOffIceAbove={offIceSubTests.length > 0}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// One results sub-table for a single domain inside a CompositeTable. Renders
+// the same table layout as the original combined table, but only for sub-tests
+// matching the given domain. Section header sits above each table.
+// ----------------------------------------------------------------------------
+
+function CompositeDomainTable({
+  label, accent, subTests, baselineSession, nonBaselineSessions, computeChange, hasOffIceAbove,
+}: {
+  label: string;
+  accent: string;
+  subTests: AttachedComposite['subTests'];
+  baselineSession: AttachedComposite['sessions'][number] | undefined;
+  nonBaselineSessions: AttachedComposite['sessions'];
+  computeChange: (testId: string, sessionResults: Map<string, number>) => { delta: number | null; pctChange: number | null; improving: boolean | null };
+  hasOffIceAbove?: boolean;
+}) {
+  return (
+    <div className={hasOffIceAbove ? 'border-t border-ink-hair' : ''}>
+      <div className="flex items-center gap-2.5 px-5 py-2.5 bg-paper">
+        <span className={`text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded text-paper ${accent}`}>
+          {label}
+        </span>
+        <span className="kicker text-[9px]">{subTests.length} test{subTests.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] font-mono tracking-wider uppercase text-ink-faint border-t border-ink-hair">
+              <th className="text-left px-5 py-3 font-medium">Test</th>
+              <th className="text-left px-3 py-3 font-medium">Unit</th>
+              {baselineSession && (
+                <th className="text-right px-3 py-3 font-medium bg-sage/5 border-l border-ink-hair">
+                  <div>Baseline</div>
+                  <div className="text-ink-mist text-[9px] normal-case mt-0.5">{formatDate(baselineSession.session.session_date)}</div>
+                </th>
+              )}
+              {nonBaselineSessions.map((sv) => (
+                <th key={sv.session.id} className="text-right px-3 py-3 font-medium border-l border-ink-hair">
+                  <div>{formatShortDate(sv.session.session_date)}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {subTests.map((st) => (
+              <tr key={st.test.id} className="border-t border-ink-hair">
+                <td className="px-5 py-2.5">
+                  <span className="text-ink font-medium">{st.test.title}</span>
+                </td>
+                <td className="px-3 py-2.5 text-ink-faint text-xs">
+                  {st.test.unit}
+                  <div className="text-[9px] opacity-75 mt-0.5">
+                    {st.test.direction === 'higher_is_better' ? '\u2191 better' : '\u2193 better'}
+                  </div>
+                </td>
+                {baselineSession && (
+                  <td className="px-3 py-2.5 text-right font-mono text-ink bg-sage/5 border-l border-ink-hair">
+                    {baselineSession.results.get(st.test.id) ?? <span className="text-ink-faint">&mdash;</span>}
+                  </td>
+                )}
+                {nonBaselineSessions.map((sv) => {
+                  const value = sv.results.get(st.test.id);
+                  const change = computeChange(st.test.id, sv.results);
+                  return (
+                    <td key={sv.session.id} className="px-3 py-2.5 text-right font-mono border-l border-ink-hair">
+                      {value !== undefined ? (
+                        <>
+                          <div className="text-ink">{value}</div>
+                          {change.pctChange !== null && (
+                            <div className={`text-[10px] mt-0.5 ${
+                              change.improving === true ? 'text-sage-dark' :
+                              change.improving === false ? 'text-crimson' :
+                              'text-ink-faint'
+                            }`}>
+                              {change.improving === true ? '\u2191' : change.improving === false ? '\u2193' : '='} {Math.abs(change.pctChange).toFixed(1)}%
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-ink-faint">&mdash;</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

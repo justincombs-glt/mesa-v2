@@ -8,6 +8,7 @@ import { CptSessionDetailClient } from './CptSessionDetailClient';
 import type {
   CPTSession, CompositePerformanceTest, CompositePerformanceTestItem,
   PerformanceTest, PerformanceTestResult, Student, SeasonEnrollment,
+  GoalDomain,
 } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,7 @@ export interface TestColumn {
   title: string;
   unit: string | null;
   direction: 'higher_is_better' | 'lower_is_better';
+  domain: GoalDomain;                 // 'on_ice' | 'off_ice' — Phase 11 split
   sequence: number;
 }
 
@@ -62,15 +64,15 @@ export default async function CptSessionDetailPage({ params }: { params: { id: s
   if (testIds.length > 0) {
     const { data: testRows } = await supabase
       .from('performance_tests')
-      .select('id, title, unit, direction')
+      .select('id, title, unit, direction, domain')
       .in('id', testIds);
-    const testById = new Map<string, Pick<PerformanceTest, 'id' | 'title' | 'unit' | 'direction'>>();
-    ((testRows ?? []) as Array<Pick<PerformanceTest, 'id' | 'title' | 'unit' | 'direction'>>).forEach((t) => {
+    const testById = new Map<string, Pick<PerformanceTest, 'id' | 'title' | 'unit' | 'direction' | 'domain'>>();
+    ((testRows ?? []) as Array<Pick<PerformanceTest, 'id' | 'title' | 'unit' | 'direction' | 'domain'>>).forEach((t) => {
       testById.set(t.id, t);
     });
     tests = items.flatMap((i) => {
       const t = testById.get(i.test_id);
-      return t ? [{ id: t.id, title: t.title, unit: t.unit, direction: t.direction, sequence: i.sequence }] : [];
+      return t ? [{ id: t.id, title: t.title, unit: t.unit, direction: t.direction, domain: t.domain, sequence: i.sequence }] : [];
     });
   }
 
