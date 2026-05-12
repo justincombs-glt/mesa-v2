@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getLinkedStudentForProfile } from '@/lib/student-dashboard';
+import { MyGamesHeader } from './MyGamesHeader';
 import type { Activity } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
@@ -61,6 +62,14 @@ export default async function MyGamesPage() {
         kicker={`Student \u00b7 ${seasonCtx.selected?.name ?? 'No season'}`}
         title={<>My <em className="italic text-crimson">games</em>.</>}
         description="Games you're scheduled for. Tap one to see details and your stats."
+      />
+
+      <MyGamesHeader
+        student={{
+          id: student.id,
+          full_name: student.full_name,
+          team_label: student.team_label,
+        }}
       />
 
       <div className="flex flex-col gap-8">

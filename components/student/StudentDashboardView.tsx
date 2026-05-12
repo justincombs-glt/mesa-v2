@@ -79,7 +79,7 @@ export function StudentDashboardView({ data, isParentView }: Props) {
           ) : (
             <div className="card-base overflow-hidden">
               {upcomingActivities.map((a, idx) => (
-                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} />
+                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} parentTapGames={isParentView} />
               ))}
             </div>
           )}
@@ -92,7 +92,7 @@ export function StudentDashboardView({ data, isParentView }: Props) {
           ) : (
             <div className="card-base overflow-hidden">
               {recentActivities.map((a, idx) => (
-                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} />
+                <ActivityRow key={a.id} activity={a} first={idx === 0} allowLog={!isParentView} parentTapGames={isParentView} />
               ))}
             </div>
           )}
@@ -172,10 +172,13 @@ function MetaField({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function ActivityRow({ activity, first, allowLog }: {
+function ActivityRow({ activity, first, allowLog, parentTapGames }: {
   activity: import('@/lib/supabase/types').Activity;
   first: boolean;
   allowLog?: boolean;
+  /** Phase 14: when in parent view, allow only game rows to be tappable.
+   *  Workouts and practices stay non-tappable since parents don't log them. */
+  parentTapGames?: boolean;
 }) {
   const typeLabel = activity.activity_type === 'game' ? 'Game'
     : activity.activity_type === 'practice' ? 'Practice'
@@ -189,9 +192,12 @@ function ActivityRow({ activity, first, allowLog }: {
       ? `vs ${activity.opponent ?? 'TBD'}`
       : activity.title || (activity.activity_type === 'practice' ? 'Practice' : 'Workout');
 
-  // Tappable for non-parent student views. Off-ice routes to mobile logger;
-  // practices and games route to the read-only my-* detail pages.
-  const isTappable = !!allowLog;
+  // Tappable matrix:
+  //  - Student view (allowLog=true): all activity types are tappable
+  //  - Parent view + game: tappable (Phase 14 — parent reviews game detail)
+  //  - Parent view + practice/workout: non-tappable (no parent action there yet)
+  const isTappable = !!allowLog
+    || (!!parentTapGames && activity.activity_type === 'game');
   const href = activity.activity_type === 'off_ice_workout'
     ? `/dashboard/workouts/${activity.id}/mobile`
     : activity.activity_type === 'practice'

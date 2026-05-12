@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { requireRole } from '@/lib/auth';
+import { requireRole, requireProfile } from '@/lib/auth';
 import type { AppRole, GoalDomain, GoalCategory } from '@/lib/supabase/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -1567,7 +1567,16 @@ export async function upsertGameStat(formData: FormData) {
     return v ? parseInt(v, 10) : null;
   };
 
-  const payload = {
+  // Phase 14: optional split performance notes (arrays). When the caller wants
+  // to update notes alongside stats, they include positive_notes[] and/or
+  // improvement_notes[] fields. If the fields aren't present at all, the
+  // payload omits them (preserves whatever was previously saved).
+  const hasPositive = formData.has('positive_notes[]');
+  const hasImprovement = formData.has('improvement_notes[]');
+  const rawPositive = formData.getAll('positive_notes[]').map((v) => String(v).trim()).filter(Boolean);
+  const rawImprovement = formData.getAll('improvement_notes[]').map((v) => String(v).trim()).filter(Boolean);
+
+  const payload: Record<string, unknown> = {
     activity_id,
     student_id,
     goals: intFromForm('goals'),
@@ -1581,6 +1590,8 @@ export async function upsertGameStat(formData: FormData) {
     goals_against: nullableIntFromForm('goals_against'),
     notes: String(formData.get('notes') ?? '').trim() || null,
   };
+  if (hasPositive) payload.positive_notes = rawPositive.length > 0 ? rawPositive : null;
+  if (hasImprovement) payload.improvement_notes = rawImprovement.length > 0 ? rawImprovement : null;
 
   const { error } = await (supabase.from('game_stats') as Any).upsert(payload, {
     onConflict: 'activity_id,student_id',
@@ -2423,5 +2434,413 @@ export async function finalizeReview(formData: FormData) {
     revalidatePath(`/dashboard/students/${e.student_id}/insights`);
     revalidatePath(`/dashboard/students/${e.student_id}/insights/reviews/${id}`);
   }
+  return { ok: true };
+}
+
+// ============================================================================
+// Phase 14: Per-student game scheduling + review tracking
+// ============================================================================
+
+/**
+ * household-side game creator. Parents and 13+ students use this to schedule
+ * games for a student they have view access to. Always single-student.
+ *
+ * Inserts:
+ *   - activities row (activity_type='game', logged_by=auth.uid())
+ *   - activity_students row linking the student
+ *   - season_id auto-resolved from current active season
+ *
+ * Authorization: any authenticated user where can_view_student(student_id)
+ * passes. The action verifies this before inserting (defense in depth on
+ * top of RLS).
+ */
+export async function householdCreateGame(formData: FormData): Promise<{
+  ok: boolean; id?: string; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_minutes_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_minutes_str ? parseInt(duration_minutes_str, 10) : null;
+  const opponent = String(formData.get('opponent') ?? '').trim() || null;
+  const home_away = String(formData.get('home_away') ?? '').trim() || 'home';
+  const venue = String(formData.get('venue') ?? '').trim() || null;
+
+  if (!student_id) return { ok: false, error: 'Pick a student.' };
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+  if (!opponent) return { ok: false, error: 'Opponent is required.' };
+
+  // Verify the caller has access to this student (defense in depth - RLS also checks)
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) {
+    return { ok: false, error: "You don't have permission to schedule games for this student." };
+  }
+
+  // Resolve current active season
+  const { data: seasonRow } = await supabase
+    .from('seasons').select('id').eq('is_current', true).maybeSingle();
+  const season_id = (seasonRow as { id: string } | null)?.id ?? null;
+  if (!season_id) return { ok: false, error: 'No active season - ask your academy admin.' };
+
+  // Insert activity
+  const { data: actData, error: actError } = await (supabase.from('activities') as Any)
+    .insert({
+      activity_type: 'game',
+      occurred_on, starts_at, duration_minutes,
+      opponent, home_away, venue,
+      season_id, logged_by: profile.id,
+    })
+    .select('id').single();
+
+  if (actError) return { ok: false, error: actError.message };
+  const activity_id = (actData as { id: string }).id;
+
+  // Link the student
+  const { error: linkError } = await (supabase.from('activity_students') as Any)
+    .insert({ activity_id, student_id });
+
+  if (linkError) {
+    // Rollback the activity row to avoid an orphaned game
+    await (supabase.from('activities') as Any).delete().eq('id', activity_id);
+    return { ok: false, error: `Could not link student to game: ${linkError.message}` };
+  }
+
+  revalidatePath('/dashboard/my-games');
+  revalidatePath(`/dashboard/students/${student_id}`);
+  revalidatePath('/dashboard/activities');
+  return { ok: true, id: activity_id };
+}
+
+/**
+ * Toggle the "reviewed with player" flag. Staff-only (Q8=A) - coaches,
+ * directors, and admins can mark games as reviewed.
+ *
+ * When toggling ON: stamps reviewed_at = now() and reviewed_by = auth.uid().
+ * When toggling OFF: clears reviewed_at and reviewed_by.
+ */
+export async function toggleGameReviewed(formData: FormData): Promise<{
+  ok: boolean; reviewed?: boolean; error?: string;
+}> {
+  const profile = await requireRole('admin', 'director', 'coach');
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing game id.' };
+
+  // Fetch current state
+  const { data: existing } = await supabase
+    .from('activities').select('reviewed_with_player').eq('id', id).single();
+  if (!existing) return { ok: false, error: 'Game not found.' };
+  const currentlyReviewed = (existing as { reviewed_with_player: boolean }).reviewed_with_player;
+
+  // Flip
+  const payload = currentlyReviewed
+    ? { reviewed_with_player: false, reviewed_at: null, reviewed_by: null }
+    : { reviewed_with_player: true, reviewed_at: new Date().toISOString(), reviewed_by: profile.id };
+
+  const { error } = await (supabase.from('activities') as Any).update(payload).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/activities/${id}`);
+  revalidatePath(`/dashboard/my-games/${id}`);
+  return { ok: true, reviewed: !currentlyReviewed };
+}
+
+/**
+ * Update split performance notes on a game stat row. Positive and improvement
+ * notes are stored as text arrays where each element is one bullet point.
+ *
+ * Any user with can_view_student access can call (RLS enforces). Upserts the
+ * game_stats row if it doesn't exist yet - handy when notes are being added
+ * before any stats are recorded.
+ */
+export async function updateGamePerformanceNotes(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!activity_id || !student_id) return { ok: false, error: 'Missing game or student.' };
+
+  // Parse arrays - form sends each bullet as a separate field positive_notes[]
+  const rawPositive = formData.getAll('positive_notes[]').map((v) => String(v).trim()).filter(Boolean);
+  const rawImprovement = formData.getAll('improvement_notes[]').map((v) => String(v).trim()).filter(Boolean);
+
+  const positive_notes = rawPositive.length > 0 ? rawPositive : null;
+  const improvement_notes = rawImprovement.length > 0 ? rawImprovement : null;
+
+  // Upsert: if no stat row exists yet, create it with zero stats and just the notes
+  const { error } = await (supabase.from('game_stats') as Any).upsert({
+    activity_id, student_id,
+    positive_notes, improvement_notes,
+  }, { onConflict: 'activity_id,student_id' });
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/activities/${activity_id}`);
+  revalidatePath(`/dashboard/my-games/${activity_id}`);
+  return { ok: true };
+}
+
+/**
+ * Update a student's team label. Anyone with can_view_student access can set
+ * this (parents for their kids, students for themselves, staff for anyone).
+ *
+ * Only changes team_label - no other student fields can be touched here, so
+ * non-staff users can't accidentally rename or rejersey-number their child.
+ */
+export async function updateStudentTeam(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  const team_label = String(formData.get('team_label') ?? '').trim() || null;
+  if (!id) return { ok: false, error: 'Missing student id.' };
+
+  const { error } = await (supabase.from('students') as Any)
+    .update({ team_label }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/students/${id}`);
+  revalidatePath('/dashboard/my-games');
+  return { ok: true };
+}
+
+/**
+ * Update game basic fields after creation. Anyone with view access on the
+ * linked student can edit (Q13=C). Does NOT touch the reviewed flag - that
+ * has its own action (toggleGameReviewed) with stricter permissions.
+ *
+ * Fields editable: occurred_on, starts_at, duration_minutes, opponent,
+ * our_score, opp_score, home_away, venue, notes.
+ */
+export async function updateGameBasics(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing game id.' };
+
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+
+  const starts_at = String(formData.get('starts_at') ?? '').trim() || null;
+  const duration_minutes_str = String(formData.get('duration_minutes') ?? '').trim();
+  const duration_minutes = duration_minutes_str ? parseInt(duration_minutes_str, 10) : null;
+  const opponent = String(formData.get('opponent') ?? '').trim() || null;
+  const our_score_str = String(formData.get('our_score') ?? '').trim();
+  const our_score = our_score_str ? parseInt(our_score_str, 10) : null;
+  const opp_score_str = String(formData.get('opp_score') ?? '').trim();
+  const opp_score = opp_score_str ? parseInt(opp_score_str, 10) : null;
+  const home_away = String(formData.get('home_away') ?? '').trim() || null;
+  const venue = String(formData.get('venue') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({
+      occurred_on, starts_at, duration_minutes,
+      opponent, our_score, opp_score, home_away, venue, notes,
+    })
+    .eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/dashboard/activities');
+  revalidatePath(`/dashboard/activities/${id}`);
+  revalidatePath(`/dashboard/my-games/${id}`);
+  return { ok: true };
+}
+
+// ============================================================================
+// Phase 15a: Nutrition tracker (household-only — student + parent visibility)
+//
+// SAFEGUARDS (Q9 = A + C + D):
+//   - Daily calorie floor of 1800 (rationale below).
+//   - Goals below the floor require an explicit confirm_below_floor=1 flag.
+//   - Server-side validation; UI also gates this.
+//
+// FLOOR CHOICE: 1800 kcal is below USOPC minimums for active teen males
+// (~2400) and at the lower end for active teen females (~1800-2200). It's
+// chosen as a "definitely too low" cliff that should never be crossed without
+// the user actively acknowledging the warning. Source: USOPC Sport Dietitian
+// recommendations on Relative Energy Deficiency in Sport (RED-S) prevention.
+//
+// ACCESS: every action below verifies can_view_student via RPC. RLS also
+// excludes staff entirely (only student-self and parent-of pass). Defense in
+// depth.
+// ============================================================================
+
+const NUTRITION_CALORIE_FLOOR = 1800;
+
+/**
+ * Set or update a student's daily calorie goal. Household-only.
+ *
+ * Required form fields:
+ *   - student_id
+ *   - daily_calories (positive integer)
+ * Optional:
+ *   - confirm_below_floor=1 — required if daily_calories < NUTRITION_CALORIE_FLOOR
+ */
+export async function setNutritionGoal(formData: FormData): Promise<{
+  ok: boolean; error?: string; warning_below_floor?: boolean;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const daily_calories_str = String(formData.get('daily_calories') ?? '').trim();
+  const confirmBelowFloor = String(formData.get('confirm_below_floor') ?? '') === '1';
+
+  if (!student_id) return { ok: false, error: 'Missing student.' };
+  if (!daily_calories_str) return { ok: false, error: 'Enter a daily calorie goal.' };
+
+  const daily_calories = parseInt(daily_calories_str, 10);
+  if (!Number.isFinite(daily_calories) || daily_calories <= 0) {
+    return { ok: false, error: 'Daily calories must be a positive number.' };
+  }
+  if (daily_calories > 10000) {
+    return { ok: false, error: 'That looks too high to be realistic — please re-check.' };
+  }
+
+  // Defense-in-depth: verify the caller has household access. RLS also enforces.
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) {
+    return { ok: false, error: "You don't have permission to set goals for this student." };
+  }
+
+  // Safeguard: floor check (Q9 = A)
+  if (daily_calories < NUTRITION_CALORIE_FLOOR && !confirmBelowFloor) {
+    return {
+      ok: false,
+      warning_below_floor: true,
+      error: `${daily_calories} is below the recommended minimum for an active teen athlete (${NUTRITION_CALORIE_FLOOR} kcal). Please reconsider, or confirm if this was set on advice from a dietitian.`,
+    };
+  }
+
+  const { error } = await (supabase.from('nutrition_goals') as Any).upsert({
+    student_id, daily_calories, set_by: profile.id,
+  }, { onConflict: 'student_id' });
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/nutrition');
+  revalidatePath(`/dashboard/family/${student_id}/nutrition`);
+  return { ok: true };
+}
+
+/**
+ * Log a food intake entry. Household-only.
+ *
+ * Required form fields:
+ *   - student_id
+ *   - name (non-empty)
+ *   - calories (non-negative integer)
+ * Optional:
+ *   - occurred_at (ISO timestamp; defaults to now)
+ */
+export async function logNutritionEntry(formData: FormData): Promise<{
+  ok: boolean; id?: string; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const name = String(formData.get('name') ?? '').trim();
+  const calories_str = String(formData.get('calories') ?? '').trim();
+  const occurred_at_raw = String(formData.get('occurred_at') ?? '').trim();
+
+  if (!student_id) return { ok: false, error: 'Missing student.' };
+  if (!name) return { ok: false, error: 'Enter what you ate.' };
+  if (!calories_str) return { ok: false, error: 'Enter the calorie count.' };
+
+  const calories = parseInt(calories_str, 10);
+  if (!Number.isFinite(calories) || calories < 0) {
+    return { ok: false, error: 'Calories must be a non-negative number.' };
+  }
+  if (calories > 10000) {
+    return { ok: false, error: 'That looks too high for a single item — please re-check.' };
+  }
+  if (name.length > 200) {
+    return { ok: false, error: 'Name is too long.' };
+  }
+
+  const occurred_at = occurred_at_raw || new Date().toISOString();
+
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) {
+    return { ok: false, error: "You don't have permission to log entries for this student." };
+  }
+
+  const { data, error } = await (supabase.from('nutrition_entries') as Any).insert({
+    student_id, name, calories, occurred_at, logged_by: profile.id,
+  }).select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/nutrition');
+  revalidatePath(`/dashboard/family/${student_id}/nutrition`);
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+/**
+ * Delete a single nutrition entry. Household-only.
+ */
+export async function deleteNutritionEntry(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing entry id.' };
+
+  const { error } = await (supabase.from('nutrition_entries') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/nutrition');
+  if (student_id) revalidatePath(`/dashboard/family/${student_id}/nutrition`);
+  return { ok: true };
+}
+
+/**
+ * Delete ALL nutrition history for a student. Household-only (Q10 = A — user
+ * full control). Used by the "Delete my history" action on the nutrition page.
+ *
+ * Required form fields:
+ *   - student_id
+ *   - confirm=1 — explicit acknowledgement
+ */
+export async function deleteAllNutritionHistory(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const confirm = String(formData.get('confirm') ?? '') === '1';
+  if (!student_id) return { ok: false, error: 'Missing student.' };
+  if (!confirm) return { ok: false, error: 'Confirmation required.' };
+
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) {
+    return { ok: false, error: "You don't have permission to delete history for this student." };
+  }
+
+  // Delete entries AND goal — total reset
+  await (supabase.from('nutrition_entries') as Any).delete().eq('student_id', student_id);
+  await (supabase.from('nutrition_goals') as Any).delete().eq('student_id', student_id);
+
+  revalidatePath('/dashboard/nutrition');
+  revalidatePath(`/dashboard/family/${student_id}/nutrition`);
   return { ok: true };
 }

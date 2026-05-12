@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StudentDashboardView } from '@/components/student/StudentDashboardView';
 import { buildStudentDashboard } from '@/lib/student-dashboard';
+import { FamilyControls } from './FamilyControls';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,19 +30,34 @@ export default async function FamilyStudentPage({ params }: { params: { studentI
   const data = await buildStudentDashboard(params.studentId);
   if (!data) notFound();
 
+  // Phase 14: parents get controls (edit team, schedule game). Staff don't need
+  // them here — they have their own admin tools.
+  const showFamilyControls = profile.role === 'parent';
+
   return (
     <>
       <PageHeader
         kicker={
           <>
             <Link href="/dashboard/family" className="hover:text-ink">My Family</Link>
-            <span className="mx-2">·</span>
+            <span className="mx-2">&middot;</span>
             {data.seasonName ?? 'Current season'}
           </>
         }
         title={<em className="italic text-crimson">{data.student.full_name}</em>}
         description="Read-only view of your child's training data."
       />
+      {showFamilyControls && (
+        <div className="mb-6">
+          <FamilyControls
+            student={{
+              id: data.student.id,
+              full_name: data.student.full_name,
+              team_label: data.student.team_label,
+            }}
+          />
+        </div>
+      )}
       <StudentDashboardView data={data} isParentView />
     </>
   );

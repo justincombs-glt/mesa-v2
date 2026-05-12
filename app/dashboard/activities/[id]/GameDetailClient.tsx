@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import {
   updateGame, deleteGame,
   addStudentToActivity, removeStudentFromActivity,
-  upsertGameStat,
+  upsertGameStat, toggleGameReviewed,
 } from '@/app/actions';
 import { toFormAction } from '@/lib/form-helpers';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
+import { BulletNotesEditor } from '@/components/games/BulletNotesEditor';
 import type { Activity, Student } from '@/lib/supabase/types';
 import type { RosterEntry } from './page';
 
@@ -28,6 +29,7 @@ export function GameDetailClient({ game, roster, availableStudents, readOnly }: 
 
   return (
     <div className="flex flex-col gap-10">
+      <ReviewedBanner game={game} readOnly={readOnly} />
       <GameMetaSection game={game} readOnly={readOnly} />
       <RosterSection game={game} roster={roster} availableStudents={availableStudents} readOnly={readOnly} />
       {skaters.length > 0 && (
@@ -37,6 +39,63 @@ export function GameDetailClient({ game, roster, availableStudents, readOnly }: 
         <StatsSection title="Goalie stats" entries={goalies} game={game} type="goalie" readOnly={readOnly} />
       )}
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 14: Reviewed-with-player toggle. Staff-only (this whole page is
+// admin/director/coach, so everyone here can toggle). Read-only state is
+// visible too, when not editable.
+// ----------------------------------------------------------------------------
+
+function ReviewedBanner({ game, readOnly }: { game: Activity; readOnly: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleToggle = async () => {
+    setBusy(true);
+    setError(null);
+    const fd = new FormData();
+    fd.set('id', game.id);
+    const res = await toggleGameReviewed(fd);
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else setError(res.error ?? 'Could not toggle.');
+  };
+
+  const reviewedDate = game.reviewed_at
+    ? new Date(game.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  return (
+    <section
+      className={`card-base p-4 flex items-center justify-between gap-4 ${
+        game.reviewed_with_player ? 'border-sage/40 bg-sage/5' : 'border-ink-hair'
+      } border-2`}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <input
+          type="checkbox"
+          checked={game.reviewed_with_player}
+          onChange={handleToggle}
+          disabled={busy || readOnly}
+          className="w-5 h-5 accent-sage-dark flex-shrink-0"
+          aria-label="Reviewed with player"
+        />
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-ink">
+            {game.reviewed_with_player ? 'Reviewed with player' : 'Not yet reviewed'}
+          </div>
+          {game.reviewed_with_player && reviewedDate && (
+            <div className="text-[11px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">
+              {reviewedDate}
+            </div>
+          )}
+        </div>
+      </div>
+      {error && <div className="text-xs text-crimson">{error}</div>}
+    </section>
   );
 }
 
@@ -353,7 +412,7 @@ function StatCard({ entry, gameId, type, readOnly }: {
         <div className="grid grid-cols-6 gap-2 text-center">
           <CardStat label="G" value={stats?.goals ?? 0} />
           <CardStat label="A" value={stats?.assists ?? 0} />
-          <CardStat label="+/−" value={stats?.plus_minus ?? 0} signed />
+          <CardStat label="+/&minus;" value={stats?.plus_minus ?? 0} signed />
           <CardStat label="Shots" value={stats?.shots ?? 0} />
           <CardStat label="PIM" value={stats?.penalty_mins ?? 0} />
           <CardStat label="TOI" value={stats?.time_on_ice ?? null} string />
@@ -366,6 +425,7 @@ function StatCard({ entry, gameId, type, readOnly }: {
           <CardStat label="SV%" value={svPct} string />
         </div>
       )}
+      <BulletNotesDisplay positive={stats?.positive_notes} improvement={stats?.improvement_notes} />
     </div>
   );
 }
@@ -389,6 +449,52 @@ function CardStat({ label, value, signed, string }: { label: string; value: numb
   );
 }
 
+// ----------------------------------------------------------------------------
+// Phase 14: read-only display of split bullet notes. Renders below stat
+// grids in both desktop row and mobile card views. Hidden when both arrays
+// are empty.
+// ----------------------------------------------------------------------------
+
+function BulletNotesDisplay({ positive, improvement }: {
+  positive: string[] | null | undefined;
+  improvement: string[] | null | undefined;
+}) {
+  const hasPositive = positive && positive.length > 0;
+  const hasImprovement = improvement && improvement.length > 0;
+  if (!hasPositive && !hasImprovement) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 pt-3 border-t border-ink-hair">
+      {hasPositive && (
+        <div className="rounded-lg border border-sage/30 bg-sage/5 p-2.5">
+          <div className="kicker text-[8px] mb-1.5">Positive performance</div>
+          <ul className="text-xs text-ink flex flex-col gap-1">
+            {positive!.map((b, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="flex-shrink-0 w-1 h-1 rounded-full bg-sage-dark mt-1.5" aria-hidden />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {hasImprovement && (
+        <div className="rounded-lg border border-crimson/20 bg-crimson/5 p-2.5">
+          <div className="kicker text-[8px] mb-1.5">Opportunities for improvement</div>
+          <ul className="text-xs text-ink flex flex-col gap-1">
+            {improvement!.map((b, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="flex-shrink-0 w-1 h-1 rounded-full bg-crimson mt-1.5" aria-hidden />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatRow({ entry, gameId, type, readOnly, first }: {
   entry: RosterEntry; gameId: string; type: 'skater' | 'goalie';
   readOnly: boolean; first: boolean;
@@ -406,45 +512,58 @@ function StatRow({ entry, gameId, type, readOnly, first }: {
   const stats = entry.stats;
   const rowClasses = `${first ? '' : 'border-t border-ink-hair'} ${readOnly ? '' : 'cursor-pointer hover:bg-ivory'} group`;
   const handleClick = readOnly ? undefined : () => setEditing(true);
+  const hasNotes = (stats?.positive_notes && stats.positive_notes.length > 0)
+    || (stats?.improvement_notes && stats.improvement_notes.length > 0);
+  // colspan for the second row: skater = 8 (1 student + 6 stats + 1 edit), goalie = 6 (1 + 4 + 1)
+  const noteColSpan = (type === 'skater' ? 7 : 5) + (readOnly ? 0 : 1);
 
   return (
-    <tr className={rowClasses} onClick={handleClick}>
-      <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
-          {entry.student.jersey_number && (
-            <span className="text-crimson font-serif text-sm">#{entry.student.jersey_number}</span>
-          )}
-          <span className="text-ink">{entry.student.full_name}</span>
-        </div>
-      </td>
-      {type === 'skater' ? (
-        <>
-          <StatCell value={stats?.goals ?? 0} />
-          <StatCell value={stats?.assists ?? 0} />
-          <StatCell value={stats?.plus_minus ?? 0} signed />
-          <StatCell value={stats?.shots ?? 0} />
-          <StatCell value={stats?.penalty_mins ?? 0} />
-          <td className="px-2 py-2 text-right font-mono text-ink">{stats?.time_on_ice ?? <span className="text-ink-faint">&mdash;</span>}</td>
-        </>
-      ) : (
-        <>
-          <StatCell value={stats?.saves} />
-          <StatCell value={stats?.shots_against} />
-          <StatCell value={stats?.goals_against} />
-          <td className="px-2 py-2 text-right font-mono text-ink">
-            {stats?.saves !== null && stats?.saves !== undefined && stats?.shots_against && stats.shots_against > 0
-              ? ((stats.saves / stats.shots_against) * 100).toFixed(1)
-              : <span className="text-ink-faint">&mdash;</span>
-            }
-          </td>
-        </>
-      )}
-      {!readOnly && (
-        <td className="px-2 py-2 text-right">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">Edit</span>
+    <>
+      <tr className={rowClasses} onClick={handleClick}>
+        <td className="px-4 py-2">
+          <div className="flex items-center gap-2">
+            {entry.student.jersey_number && (
+              <span className="text-crimson font-serif text-sm">#{entry.student.jersey_number}</span>
+            )}
+            <span className="text-ink">{entry.student.full_name}</span>
+          </div>
         </td>
+        {type === 'skater' ? (
+          <>
+            <StatCell value={stats?.goals ?? 0} />
+            <StatCell value={stats?.assists ?? 0} />
+            <StatCell value={stats?.plus_minus ?? 0} signed />
+            <StatCell value={stats?.shots ?? 0} />
+            <StatCell value={stats?.penalty_mins ?? 0} />
+            <td className="px-2 py-2 text-right font-mono text-ink">{stats?.time_on_ice ?? <span className="text-ink-faint">&mdash;</span>}</td>
+          </>
+        ) : (
+          <>
+            <StatCell value={stats?.saves} />
+            <StatCell value={stats?.shots_against} />
+            <StatCell value={stats?.goals_against} />
+            <td className="px-2 py-2 text-right font-mono text-ink">
+              {stats?.saves !== null && stats?.saves !== undefined && stats?.shots_against && stats.shots_against > 0
+                ? ((stats.saves / stats.shots_against) * 100).toFixed(1)
+                : <span className="text-ink-faint">&mdash;</span>
+              }
+            </td>
+          </>
+        )}
+        {!readOnly && (
+          <td className="px-2 py-2 text-right">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">Edit</span>
+          </td>
+        )}
+      </tr>
+      {hasNotes && (
+        <tr className="border-t border-ink-hair">
+          <td colSpan={noteColSpan} className="px-4 pb-3 pt-1">
+            <BulletNotesDisplay positive={stats?.positive_notes} improvement={stats?.improvement_notes} />
+          </td>
+        </tr>
       )}
-    </tr>
+    </>
   );
 }
 
@@ -524,9 +643,26 @@ function StatEditRow({ entry, gameId, type, onDone, rowBorder }: {
           )}
 
           <div>
-            <label className="kicker block mb-1">Notes</label>
+            <label className="kicker block mb-1">Quick notes</label>
             <textarea name="notes" defaultValue={entry.stats?.notes ?? ''} rows={1}
               className="input-base !h-8 resize-none text-xs" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <BulletNotesEditor
+              name="positive_notes"
+              label="Positive performance notes"
+              accent="sage"
+              initial={entry.stats?.positive_notes}
+              placeholder="e.g. Strong on the forecheck"
+            />
+            <BulletNotesEditor
+              name="improvement_notes"
+              label="Opportunities for improvement"
+              accent="crimson"
+              initial={entry.stats?.improvement_notes}
+              placeholder="e.g. Watch positioning in the d-zone"
+            />
           </div>
 
           {error && <div className="text-xs text-crimson">{error}</div>}
@@ -612,10 +748,25 @@ function StatEditCard({ entry, gameId, type, onDone }: {
       )}
 
       <div>
-        <label className="kicker block mb-1">Notes</label>
+        <label className="kicker block mb-1">Quick notes</label>
         <textarea name="notes" defaultValue={entry.stats?.notes ?? ''} rows={2}
           className="input-base resize-none text-sm" />
       </div>
+
+      <BulletNotesEditor
+        name="positive_notes"
+        label="Positive performance notes"
+        accent="sage"
+        initial={entry.stats?.positive_notes}
+        placeholder="e.g. Strong on the forecheck"
+      />
+      <BulletNotesEditor
+        name="improvement_notes"
+        label="Opportunities for improvement"
+        accent="crimson"
+        initial={entry.stats?.improvement_notes}
+        placeholder="e.g. Watch positioning"
+      />
 
       {error && <div className="text-xs text-crimson">{error}</div>}
 

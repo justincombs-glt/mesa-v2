@@ -245,6 +245,10 @@ export interface Activity {
   source_practice_plan_id: string | null;
   source_workout_plan_id: string | null;
   season_id: string | null;
+  // Phase 14: review tracking (games only; null/false on other activity types)
+  reviewed_with_player: boolean;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -279,6 +283,9 @@ export interface GameStat {
   shots_against: number | null;
   goals_against: number | null;
   notes: string | null;
+  // Phase 14: split coach notes
+  positive_notes: string[] | null;
+  improvement_notes: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -416,4 +423,27 @@ export interface Database {
       review_type: ReviewType;
     };
   };
+}
+
+// ============================================================================
+// Phase 15a: Nutrition tracker
+// ============================================================================
+
+export interface NutritionGoal {
+  student_id: string;
+  daily_calories: number;
+  set_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NutritionEntry {
+  id: string;
+  student_id: string;
+  occurred_at: string;
+  name: string;
+  calories: number;
+  logged_by: string | null;
+  created_at: string;
+  updated_at: string;
 }

@@ -1,24 +1,58 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { requireRole } from '@/lib/auth';
+import { requireProfile } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { getLinkedStudentForProfile } from '@/lib/student-dashboard';
-import type { Activity, GameStat, Attendance } from '@/lib/supabase/types';
+import type { Activity, GameStat, Attendance, Student } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
 
 export default async function MyGameDetailPage({ params }: { params: { id: string } }) {
-  const profile = await requireRole('student');
+  const profile = await requireProfile();
   const supabase = createClient();
 
-  const student = await getLinkedStudentForProfile(profile.id);
+  // Phase 14: this route now accepts students AND parents. Other roles fall
+  // through to a 404 since they have their own staff detail surface.
+  if (profile.role !== 'student' && profile.role !== 'parent') {
+    notFound();
+  }
+
+  // Identify which student we're showing. For students it's their linked record;
+  // for parents it's the student linked to this game's roster (single-student
+  // games for sure, but multi-student legacy games take the first linked child).
+  let student: Student | null = null;
+
+  if (profile.role === 'student') {
+    student = await getLinkedStudentForProfile(profile.id);
+  } else {
+    // Parent: find the student in this game's roster that the parent has access to
+    const { data: rosterRows } = await supabase
+      .from('activity_students').select('student_id').eq('activity_id', params.id);
+    const rosterIds = ((rosterRows ?? []) as Array<{ student_id: string }>).map((r) => r.student_id);
+    if (rosterIds.length > 0) {
+      const { data: linkRows } = await supabase
+        .from('family_links').select('student_id')
+        .eq('parent_id', profile.id).in('student_id', rosterIds);
+      const myChildIds = ((linkRows ?? []) as Array<{ student_id: string }>).map((r) => r.student_id);
+      if (myChildIds.length > 0) {
+        const { data: sRow } = await supabase
+          .from('students').select('*').eq('id', myChildIds[0]).single();
+        student = (sRow as unknown as Student) ?? null;
+      }
+    }
+  }
+
   if (!student) {
     return (
       <>
-        <PageHeader kicker="Student" title="Game" description="Couldn't load." />
+        <PageHeader kicker={profile.role === 'parent' ? 'Parent' : 'Student'} title="Game" description="Couldn't load." />
         <div className="card-base p-8 text-center">
-          <p className="text-sm text-ink-dim">Your account isn&apos;t linked to a student record yet.</p>
+          <p className="text-sm text-ink-dim">
+            {profile.role === 'parent'
+              ? "You don't have access to this game."
+              : "Your account isn't linked to a student record yet."}
+          </p>
         </div>
       </>
     );
@@ -91,6 +125,23 @@ export default async function MyGameDetailPage({ params }: { params: { id: strin
         </div>
       )}
 
+      {/* Phase 14: Reviewed-with-player banner (read-only for student) */}
+      {game.reviewed_with_player && (
+        <div className="card-base p-3 mb-6 flex items-center gap-3 border border-sage/30 bg-sage/5">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-sage-dark flex-shrink-0">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <div className="text-sm text-ink">
+            <span className="font-medium">Reviewed with your coach</span>
+            {game.reviewed_at && (
+              <span className="text-ink-faint text-xs ml-2">
+                &middot; {new Date(game.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 flex flex-col gap-6">
           <section>
@@ -128,6 +179,11 @@ export default async function MyGameDetailPage({ params }: { params: { id: strin
                 {stats.notes}
               </div>
             )}
+            {/* Phase 14: split performance notes */}
+            <BulletNotesDisplay
+              positive={stats?.positive_notes}
+              improvement={stats?.improvement_notes}
+            />
           </section>
 
           {game.notes && (
@@ -174,6 +230,46 @@ function StatCell({ label, value, signed, string }: {
     <div className="text-center">
       <div className="kicker text-[9px] mb-1">{label}</div>
       <div className="font-mono text-lg text-ink">{display}</div>
+    </div>
+  );
+}
+
+function BulletNotesDisplay({ positive, improvement }: {
+  positive: string[] | null | undefined;
+  improvement: string[] | null | undefined;
+}) {
+  const hasPositive = positive && positive.length > 0;
+  const hasImprovement = improvement && improvement.length > 0;
+  if (!hasPositive && !hasImprovement) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+      {hasPositive && (
+        <div className="rounded-lg border border-sage/30 bg-sage/5 p-3">
+          <div className="kicker text-[9px] mb-2">Positive performance</div>
+          <ul className="text-sm text-ink flex flex-col gap-1.5">
+            {positive!.map((b, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-sage-dark mt-1.5" aria-hidden />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {hasImprovement && (
+        <div className="rounded-lg border border-crimson/20 bg-crimson/5 p-3">
+          <div className="kicker text-[9px] mb-2">Opportunities for improvement</div>
+          <ul className="text-sm text-ink flex flex-col gap-1.5">
+            {improvement!.map((b, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-crimson mt-1.5" aria-hidden />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
