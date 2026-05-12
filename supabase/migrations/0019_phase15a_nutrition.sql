@@ -32,13 +32,6 @@ create table if not exists public.nutrition_goals (
 
 create index if not exists nutrition_goals_set_by_idx on public.nutrition_goals(set_by);
 
--- Auto-update updated_at on row change (reuse the standard trigger function
--- defined in 0006_v2_full_rewrite.sql)
-drop trigger if exists nutrition_goals_set_updated_at on public.nutrition_goals;
-create trigger nutrition_goals_set_updated_at
-  before update on public.nutrition_goals
-  for each row execute function public.set_updated_at();
-
 -- ----------------------------------------------------------------------------
 -- 2. nutrition_entries — food log entries with timestamps
 -- ----------------------------------------------------------------------------
@@ -56,11 +49,6 @@ create table if not exists public.nutrition_entries (
 
 create index if not exists nutrition_entries_student_time_idx
   on public.nutrition_entries(student_id, occurred_at desc);
-
-drop trigger if exists nutrition_entries_set_updated_at on public.nutrition_entries;
-create trigger nutrition_entries_set_updated_at
-  before update on public.nutrition_entries
-  for each row execute function public.set_updated_at();
 
 -- ----------------------------------------------------------------------------
 -- 3. RLS — household-only access (no staff)

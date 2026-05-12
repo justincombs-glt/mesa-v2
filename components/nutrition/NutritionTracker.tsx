@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   setNutritionGoal, logNutritionEntry,
@@ -8,6 +8,8 @@ import {
 } from '@/app/actions';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
+import { BarcodeScanModal } from '@/components/nutrition/BarcodeScanModal';
+import type { OffLookupResult } from '@/lib/openfoodfacts';
 import type { NutritionEntry } from '@/lib/supabase/types';
 import type { NutritionData } from '@/lib/nutrition';
 
@@ -242,10 +244,30 @@ function LogEntryModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Controlled inputs so the barcode scanner can pre-populate them
+  const [name, setName] = useState('');
+  const [calories, setCalories] = useState('');
+  const [scanInfo, setScanInfo] = useState<string | null>(null);
+
+  // Sub-modal state for barcode scanning
+  const [scanOpen, setScanOpen] = useState(false);
+
+  // Reset all state when the parent modal closes
+  useEffect(() => {
+    if (!open) {
+      setName('');
+      setCalories('');
+      setScanInfo(null);
+      setError(null);
+    }
+  }, [open]);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const fd = new FormData();
     fd.set('student_id', studentId);
+    fd.set('name', name);
+    fd.set('calories', calories);
     setSaving(true);
     setError(null);
     const res = await logNutritionEntry(fd);
@@ -258,43 +280,97 @@ function LogEntryModal({
     }
   };
 
+  const handleScanResult = (result: OffLookupResult) => {
+    if (result.kind === 'found') {
+      setName(result.name);
+      setCalories(result.calories.toString());
+      setScanInfo(result.per === 'serving'
+        ? 'Calories per serving from Open Food Facts. Review and adjust if needed.'
+        : 'Per 100g from Open Food Facts \u2014 you may want to adjust for your actual portion.');
+    } else if (result.kind === 'partial') {
+      setName(result.name);
+      setCalories('');
+      setScanInfo('Found the product but no calorie data \u2014 please enter calories.');
+    } else {
+      setScanInfo('Product not found in the food database \u2014 enter the details manually.');
+    }
+  };
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Log a food or drink"
-      description={viewerRole === 'parent'
-        ? "Add an item your child consumed."
-        : "What did you eat or drink?"}
-    >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <FormField label="What was it?" required help="e.g. Granola bar, Banana, Chicken sandwich">
-          <input type="text" name="name" required maxLength={200} className="input-base" autoFocus />
-        </FormField>
-
-        <FormField label="Calories" required>
-          <input
-            type="number"
-            name="calories"
-            required
-            min="0"
-            max="10000"
-            inputMode="numeric"
-            placeholder="e.g. 180"
-            className="input-base"
-          />
-        </FormField>
-
-        {error && <div className="text-sm text-crimson">{error}</div>}
-
-        <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
-          <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary !h-10 text-[13px]">
-            {saving ? 'Logging\u2026' : 'Log entry'}
+    <>
+      <Modal
+        open={open && !scanOpen}
+        onClose={onClose}
+        title="Log a food or drink"
+        description={viewerRole === 'parent'
+          ? "Add an item your child consumed."
+          : "What did you eat or drink?"}
+      >
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => setScanOpen(true)}
+            className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg border-2 border-dashed border-sage-dark/40 text-sage-dark hover:bg-sage/5 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6V4a1 1 0 011-1h2M3 18v2a1 1 0 001 1h2M21 6V4a1 1 0 00-1-1h-2M21 18v2a1 1 0 01-1 1h-2"/>
+              <line x1="7" y1="7" x2="7" y2="17"/>
+              <line x1="10" y1="7" x2="10" y2="17"/>
+              <line x1="13" y1="7" x2="13" y2="17"/>
+              <line x1="17" y1="7" x2="17" y2="17"/>
+            </svg>
+            <span className="text-sm font-medium">Scan a barcode</span>
           </button>
-        </div>
-      </form>
-    </Modal>
+
+          {scanInfo && (
+            <div className="text-xs text-ink-dim bg-sand-50 p-2.5 rounded">
+              {scanInfo}
+            </div>
+          )}
+
+          <FormField label="What was it?" required help="e.g. Granola bar, Banana, Chicken sandwich">
+            <input
+              type="text"
+              required
+              maxLength={200}
+              className="input-base"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </FormField>
+
+          <FormField label="Calories" required>
+            <input
+              type="number"
+              required
+              min="0"
+              max="10000"
+              inputMode="numeric"
+              placeholder="e.g. 180"
+              className="input-base"
+              value={calories}
+              onChange={(e) => setCalories(e.target.value)}
+            />
+          </FormField>
+
+          {error && <div className="text-sm text-crimson">{error}</div>}
+
+          <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
+            <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
+            <button type="submit" disabled={saving || !name.trim() || !calories.trim()} className="btn-primary !h-10 text-[13px]">
+              {saving ? 'Logging\u2026' : 'Log entry'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <BarcodeScanModal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onResult={handleScanResult}
+        onSkipToManual={() => setScanInfo(null)}
+      />
+    </>
   );
 }
 
