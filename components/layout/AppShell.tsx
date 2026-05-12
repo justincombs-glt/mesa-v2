@@ -153,6 +153,12 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/cpt-sessions', label: 'APA Sessions', icon: icons.tests },
           ],
         },
+        {
+          group: 'Athletes',
+          items: [
+            { href: '/dashboard/nutrition-overview', label: 'Nutrition', icon: icons.nutrition },
+          ],
+        },
         { group: null, items: [settings] },
       ];
     case 'student':
