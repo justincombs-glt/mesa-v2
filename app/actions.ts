@@ -2844,3 +2844,60 @@ export async function deleteAllNutritionHistory(formData: FormData): Promise<{
   revalidatePath(`/dashboard/family/${student_id}/nutrition`);
   return { ok: true };
 }
+
+// ============================================================================
+// Phase 15d: autocomplete history fetch
+// ============================================================================
+
+/**
+ * Fetch recent food log history for a student to power autocomplete in the log
+ * modal. Returns distinct items from the last 30 days with the most recent
+ * calorie value per name (Q4 = B), ordered by most-recent-use first.
+ *
+ * Household-only (same access scope as the rest of nutrition writes).
+ * RLS on nutrition_entries enforces this — caller must be self-student,
+ * parent-of, or trainer (trainer wouldn't reach here since they don't see
+ * the log modal, but defense in depth).
+ */
+export async function getNutritionHistory(formData: FormData): Promise<{
+  ok: boolean;
+  items?: Array<{ name: string; calories: number; last_logged: string }>;
+  error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!student_id) return { ok: false, error: 'Missing student.' };
+
+  // Defense in depth — RLS also enforces
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) return { ok: false, error: 'No access to this student.' };
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  // Pull last 30 days of entries ordered newest first. We dedupe by name in JS
+  // since Postgres DISTINCT ON would need a more involved subquery and the
+  // dataset per student is small (max ~10 entries/day × 30 days = 300 rows).
+  const { data: rows, error } = await supabase
+    .from('nutrition_entries')
+    .select('name, calories, occurred_at')
+    .eq('student_id', student_id)
+    .gte('occurred_at', thirtyDaysAgo.toISOString())
+    .order('occurred_at', { ascending: false })
+    .limit(500);
+
+  if (error) return { ok: false, error: error.message };
+
+  const seen = new Set<string>();
+  const items: Array<{ name: string; calories: number; last_logged: string }> = [];
+  for (const r of (rows ?? []) as Array<{ name: string; calories: number; occurred_at: string }>) {
+    const key = r.name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ name: r.name, calories: r.calories, last_logged: r.occurred_at });
+  }
+
+  return { ok: true, items };
+}

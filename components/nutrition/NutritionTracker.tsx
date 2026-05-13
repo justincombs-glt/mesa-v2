@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import {
   setNutritionGoal, logNutritionEntry,
   deleteNutritionEntry, deleteAllNutritionHistory,
+  getNutritionHistory,
 } from '@/app/actions';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import { BarcodeScanModal } from '@/components/nutrition/BarcodeScanModal';
+import { FoodAutocomplete, type HistoryItem } from '@/components/nutrition/FoodAutocomplete';
 import type { OffLookupResult } from '@/lib/openfoodfacts';
 import type { NutritionEntry } from '@/lib/supabase/types';
 import type { NutritionData } from '@/lib/nutrition';
@@ -252,15 +254,30 @@ function LogEntryModal({
   // Sub-modal state for barcode scanning
   const [scanOpen, setScanOpen] = useState(false);
 
-  // Reset all state when the parent modal closes
+  // Phase 15d: autocomplete history (fetched once when the modal opens)
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  // Fetch history when the modal opens; reset everything when it closes
   useEffect(() => {
     if (!open) {
       setName('');
       setCalories('');
       setScanInfo(null);
       setError(null);
+      setHistory([]);
+      return;
     }
-  }, [open]);
+    let cancelled = false;
+    (async () => {
+      const fd = new FormData();
+      fd.set('student_id', studentId);
+      const res = await getNutritionHistory(fd);
+      if (!cancelled && res.ok && res.items) {
+        setHistory(res.items);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, studentId]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -328,16 +345,15 @@ function LogEntryModal({
             </div>
           )}
 
-          <FormField label="What was it?" required help="e.g. Granola bar, Banana, Chicken sandwich">
-            <input
-              type="text"
-              required
-              maxLength={200}
-              className="input-base"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </FormField>
+          <FoodAutocomplete
+            name={name}
+            calories={calories}
+            onChange={({ name: n, calories: c }) => { setName(n); setCalories(c); }}
+            history={history}
+            required
+            label="What was it?"
+            help="e.g. Granola bar, Banana, Chicken sandwich"
+          />
 
           <FormField label="Calories" required>
             <input
