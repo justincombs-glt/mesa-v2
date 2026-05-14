@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   setNutritionGoal, logNutritionEntry,
   deleteNutritionEntry, deleteAllNutritionHistory,
@@ -29,6 +30,11 @@ export function NutritionTracker({ studentId, studentName, data, viewerRole, all
   const { goal, today, last7Days } = data;
   const hasGoal = !!goal;
 
+  // Phase 15e: history page route differs by role
+  const historyHref = viewerRole === 'parent'
+    ? `/dashboard/family/${studentId}/nutrition/history`
+    : '/dashboard/nutrition/history';
+
   return (
     <div className="flex flex-col gap-6">
       <EducationalBanner viewerRole={viewerRole} />
@@ -41,7 +47,7 @@ export function NutritionTracker({ studentId, studentName, data, viewerRole, all
       />
 
       {hasGoal && (
-        <SevenDaySection days={last7Days} goal={goal!.daily_calories} />
+        <SevenDaySection days={last7Days} goal={goal!.daily_calories} historyHref={historyHref} />
       )}
 
       <GoalSection
@@ -394,10 +400,24 @@ function LogEntryModal({
 // 7-day strip
 // ----------------------------------------------------------------------------
 
-function SevenDaySection({ days, goal }: {
+function SevenDaySection({ days, goal, historyHref }: {
   days: { date: string; entries: NutritionEntry[]; total: number }[];
   goal: number;
+  historyHref: string;
 }) {
+  // Phase 15e: which day is currently expanded? Null = none.
+  // Today is intentionally non-expandable since it's already visible in
+  // TodaySection above; tapping today's bar is a no-op.
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  // Re-look up the expanded day's entries from props (kept in sync with parent
+  // refresh after edit/delete)
+  const expandedDay = expandedDate
+    ? days.find((d) => d.date === expandedDate)
+    : null;
+
   return (
     <section>
       <div className="kicker mb-3">Last 7 days</div>
@@ -407,13 +427,33 @@ function SevenDaySection({ days, goal }: {
             const date = new Date(day.date + 'T00:00:00');
             const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1);
             const dayNum = date.getDate();
-            // Shame-free: bars fill toward goal but never get a "you went over" red.
-            // Cap at 100% visually, mark color slightly different at full.
             const pct = goal > 0 ? Math.min(100, (day.total / goal) * 100) : 0;
-            const isToday = day.date === new Date().toISOString().slice(0, 10);
+            const isToday = day.date === todayKey;
+            const isExpanded = day.date === expandedDate;
+            // Q10 = A: only days with at least one entry are tappable
+            const isTappable = !isToday && day.entries.length > 0;
+
+            const baseClasses = 'flex flex-col items-center gap-1.5 rounded p-1 -m-1';
+            const interactiveClasses = isTappable
+              ? `cursor-pointer ${isExpanded ? 'bg-sage/10 ring-1 ring-sage/30' : 'hover:bg-ivory'}`
+              : '';
+
+            const onClick = isTappable
+              ? () => setExpandedDate(isExpanded ? null : day.date)
+              : undefined;
 
             return (
-              <div key={day.date} className="flex flex-col items-center gap-1.5">
+              <button
+                key={day.date}
+                type="button"
+                onClick={onClick}
+                disabled={!isTappable}
+                className={`${baseClasses} ${interactiveClasses} text-left disabled:cursor-default`}
+                aria-expanded={isExpanded || undefined}
+                aria-label={isTappable
+                  ? `${day.entries.length} entries, ${day.total} calories on ${day.date}. Tap to ${isExpanded ? 'collapse' : 'expand'}.`
+                  : `${day.total} calories on ${day.date}`}
+              >
                 <div className={`text-[10px] font-mono uppercase ${isToday ? 'text-crimson' : 'text-ink-faint'}`}>
                   {dayLabel}
                 </div>
@@ -424,21 +464,137 @@ function SevenDaySection({ days, goal }: {
                   <div
                     className="absolute bottom-0 left-0 right-0 bg-sage-dark transition-all"
                     style={{ height: `${pct}%` }}
-                    aria-label={`${day.total} calories on ${day.date}`}
+                    aria-hidden
                   />
                 </div>
                 <div className="text-[10px] font-mono text-ink-dim">
                   {day.total > 0 ? day.total.toLocaleString() : '\u2014'}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
         <p className="text-[10px] font-mono uppercase tracking-wider text-ink-faint text-center mt-3">
-          Sage bars = calories logged each day &middot; full bar at goal
+          Tap a past day to see what you ate &middot; today shown above
         </p>
+        <div className="text-center mt-2">
+          <Link
+            href={historyHref}
+            className="text-[11px] font-mono uppercase tracking-wider text-ink-faint hover:text-crimson inline-flex items-center gap-1"
+          >
+            View full history <span aria-hidden>&rarr;</span>
+          </Link>
+        </div>
       </div>
+
+      {/* Phase 15e: inline-expand section showing the selected day's entries */}
+      {expandedDay && (
+        <ExpandedDayPanel
+          day={expandedDay}
+          goal={goal}
+          onClose={() => setExpandedDate(null)}
+        />
+      )}
     </section>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 15e: expanded-day panel
+// Shown when the user taps a past day in the 7-day strip. Lists the day's
+// entries with a vs-goal indicator (Q3 = B). View-only (Q4 = A).
+// ----------------------------------------------------------------------------
+
+function ExpandedDayPanel({
+  day, goal, onClose,
+}: {
+  day: { date: string; entries: NutritionEntry[]; total: number };
+  goal: number;
+  onClose: () => void;
+}) {
+  const date = new Date(day.date + 'T00:00:00');
+  const dateLabel = date.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric',
+  });
+
+  const pct = goal > 0 ? Math.round((day.total / goal) * 100) : null;
+
+  return (
+    <div className="mt-4 card-base overflow-hidden border-sage/30">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-sand-50 border-b border-ink-hair">
+        <div>
+          <div className="font-serif text-lg text-ink">{dateLabel}</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mt-0.5">
+            {day.total.toLocaleString()} kcal logged
+            {pct !== null && (
+              <>
+                {' \u00b7 '}
+                {pct}% of {goal.toLocaleString()} goal
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[10px] font-mono uppercase tracking-wider text-ink-faint hover:text-crimson"
+          aria-label="Collapse day"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Entries */}
+      {day.entries.length === 0 ? (
+        <div className="p-6 text-center text-sm text-ink-dim">
+          No entries logged on this day.
+        </div>
+      ) : (
+        <div>
+          {day.entries.map((entry, idx) => (
+            <ExpandedDayEntryRow
+              key={entry.id}
+              entry={entry}
+              first={idx === 0}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// One row inside the expanded day panel. View-only per Q4 = A —
+// past days are immutable. Today's entries remain editable via the Today
+// section above; this is for historical days only.
+// ----------------------------------------------------------------------------
+
+function ExpandedDayEntryRow({
+  entry, first,
+}: {
+  entry: NutritionEntry;
+  first: boolean;
+}) {
+  const time = new Date(entry.occurred_at).toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit',
+  });
+
+  const borderClass = first ? '' : 'border-t border-ink-hair';
+
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 ${borderClass}`}>
+      <div className="flex-shrink-0 w-16 text-right">
+        <div className="font-mono text-xs text-ink-faint">{time}</div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-ink truncate">{entry.name}</div>
+      </div>
+      <div className="flex-shrink-0 font-mono text-sm text-ink">
+        {entry.calories.toLocaleString()}
+      </div>
+    </div>
   );
 }
 

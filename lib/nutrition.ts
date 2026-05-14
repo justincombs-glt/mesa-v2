@@ -162,3 +162,60 @@ export async function buildNutritionOverview(): Promise<NutritionOverviewRow[]> 
     };
   });
 }
+
+// ============================================================================
+// Phase 15e: all-time history loader
+// ============================================================================
+
+/**
+ * Load ALL nutrition entries for a student, grouped by date. Used by the
+ * dedicated History page (/dashboard/nutrition/history and the parent
+ * equivalent).
+ *
+ * - No date filter — Q1 = D returns the full history.
+ * - Zero-entry days are omitted (Q10 = A) so the list only shows days with
+ *   actual activity.
+ * - Sorted most-recent-first.
+ * - Also returns the current goal so the page can render "X% of goal"
+ *   indicators per day (Q3 = B).
+ *
+ * Access: RLS on nutrition_entries enforces — caller must be student-self,
+ * parent-of-student, or trainer (per Phase 15a/15b policies).
+ */
+export async function buildNutritionHistory(studentId: string): Promise<{
+  goal: NutritionGoal | null;
+  days: NutritionDay[];
+}> {
+  const supabase = createClient();
+
+  const { data: goalRow } = await supabase
+    .from('nutrition_goals').select('*')
+    .eq('student_id', studentId).maybeSingle();
+  const goal = goalRow as NutritionGoal | null;
+
+  const { data: entryRows } = await supabase
+    .from('nutrition_entries').select('*')
+    .eq('student_id', studentId)
+    .order('occurred_at', { ascending: false });
+
+  const entries = (entryRows ?? []) as NutritionEntry[];
+
+  // Bucket by local date
+  const byDate = new Map<string, NutritionEntry[]>();
+  for (const entry of entries) {
+    const d = new Date(entry.occurred_at);
+    const dateKey = d.toISOString().slice(0, 10);
+    if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+    byDate.get(dateKey)!.push(entry);
+  }
+
+  // Build days array sorted most-recent first (Map preserves insertion order
+  // which here is descending since we ordered the query that way).
+  const days: NutritionDay[] = [];
+  for (const [date, dayEntries] of byDate) {
+    const total = dayEntries.reduce((s, e) => s + e.calories, 0);
+    days.push({ date, entries: dayEntries, total });
+  }
+
+  return { goal, days };
+}
