@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSeasonContext } from '@/lib/season';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { WorkoutDetailClient } from './WorkoutDetailClient';
+import { ReleaseControl } from './ReleaseControl';
 import type {
   Activity, WorkoutExercise, WorkoutExerciseSet,
   Exercise, SeasonEnrollment,
@@ -163,6 +164,11 @@ export default async function WorkoutDetailPage({ params }: { params: { id: stri
             Mobile mode →
           </Link>
         }
+      />
+      <ReleaseControl
+        workoutId={workout.id}
+        releasedAt={workout.released_at}
+        disabled={seasonCtx.isArchived}
       />
       <WorkoutDetailClient
         workout={workout}

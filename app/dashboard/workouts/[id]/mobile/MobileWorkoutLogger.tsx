@@ -12,6 +12,15 @@ interface Props {
   exercises: ResolvedExercise[];
   setMap: SetMap;
   readOnly: boolean;
+  /**
+   * Phase 16: true when the workout is unreleased AND viewer is a student.
+   * Causes a banner to render at the top explaining the locked state.
+   * `readOnly` is also true in this case, so input affordances are already
+   * suppressed; `locked` exists separately so the UI can distinguish the
+   * "waiting for trainer release" message from other read-only causes
+   * (archived season, etc.).
+   */
+  locked?: boolean;
   /** True when the logger is opened by a student logging their own sets. */
   studentMode?: boolean;
   /** Whether trash buttons appear on existing sets. False for students on multi-athlete workouts (Q7=C). */
@@ -23,7 +32,7 @@ const RPE_CHIPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export function MobileWorkoutLogger({
   workout, roster, exercises, setMap, readOnly,
-  studentMode = false, canDeleteSets = true,
+  locked = false, studentMode = false, canDeleteSets = true,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [hideAbsent, setHideAbsent] = useState(false);
@@ -61,6 +70,23 @@ export function MobileWorkoutLogger({
 
   return (
     <>
+      {locked && (
+        <div className="px-3 py-3 bg-crimson/5 border-b border-crimson/20">
+          <div className="flex items-start gap-2.5 max-w-md mx-auto">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-crimson flex-shrink-0 mt-0.5">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-ink">Locked</div>
+              <div className="text-xs text-ink-dim mt-0.5">
+                Your trainer will release this workout when it&apos;s time to start. Until then, you can preview the exercises below.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Exercise pills - sticks under AppShell hamburger top bar on mobile */}
       <div className="sticky top-[60px] md:top-0 z-20 bg-ivory border-b border-ink-hair">
         <div className="flex gap-2 overflow-x-auto px-3 py-2.5 scrollbar-hide">

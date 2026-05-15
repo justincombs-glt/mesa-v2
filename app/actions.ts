@@ -2901,3 +2901,62 @@ export async function getNutritionHistory(formData: FormData): Promise<{
 
   return { ok: true, items };
 }
+
+// ============================================================================
+// Phase 16: Workout release gating (Q1 = B manual release, Q5 = B irreversible,
+// Q9 = B trainers/directors/admins only)
+// ============================================================================
+
+/**
+ * Release a scheduled off-ice workout so students can begin logging their
+ * sets. Until released, students see the workout in read-only preview mode
+ * and the database-level RLS rejects any set-write attempts.
+ *
+ * Required form fields:
+ *   - activity_id   UUID of the off-ice workout to release
+ *
+ * Rules:
+ *   - Caller must be admin, director, or trainer (Q9 = B; coaches NOT allowed)
+ *   - Activity must be of type 'off_ice_workout'
+ *   - Activity must NOT already be released (Q5 = B — irreversible once set)
+ *
+ * Stamps `released_at = now()` and `released_by = caller.id` for audit.
+ */
+export async function releaseWorkout(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireRole('admin', 'director', 'trainer');
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  if (!activity_id) return { ok: false, error: 'Missing activity id.' };
+
+  // Verify the activity exists, is an off-ice workout, and isn't already released
+  const { data: row, error: fetchErr } = await supabase
+    .from('activities')
+    .select('id, activity_type, released_at')
+    .eq('id', activity_id)
+    .maybeSingle();
+
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (!row) return { ok: false, error: 'Workout not found.' };
+
+  const activity = row as { id: string; activity_type: string; released_at: string | null };
+  if (activity.activity_type !== 'off_ice_workout') {
+    return { ok: false, error: 'Only off-ice workouts can be released.' };
+  }
+  if (activity.released_at) {
+    return { ok: false, error: 'This workout has already been released.' };
+  }
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({ released_at: new Date().toISOString(), released_by: profile.id })
+    .eq('id', activity_id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  revalidatePath('/dashboard/workouts');
+  revalidatePath('/dashboard/my-workouts');
+  return { ok: true };
+}

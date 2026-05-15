@@ -153,7 +153,8 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
           roster={rosterStudents}
           exercises={resolvedExercises}
           setMap={setMap}
-          readOnly={seasonCtx.isArchived}
+          readOnly={seasonCtx.isArchived || (studentMode && !workout.released_at)}
+          locked={studentMode && !workout.released_at}
           studentMode={studentMode}
           canDeleteSets={!studentMode || isSoleAthlete}
         />

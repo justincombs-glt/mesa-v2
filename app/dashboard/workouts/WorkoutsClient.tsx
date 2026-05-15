@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createWorkout } from '@/app/actions';
+import { createWorkout, releaseWorkout } from '@/app/actions';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import type { Student, WorkoutPlan } from '@/lib/supabase/types';
@@ -76,45 +76,115 @@ function WorkoutRowItem({ workout, first }: { workout: WorkoutRow; first: boolea
     : null;
 
   return (
-    <Link href={`/dashboard/workouts/${workout.id}`}
-      className={`flex items-center gap-4 px-5 py-4 group ${first ? '' : 'border-t border-ink-hair'}`}>
-      <div className="flex-shrink-0 w-16 text-right">
-        <div className="font-serif text-sm text-ink">{formatDate(workout.occurred_on)}</div>
-        {workout.starts_at && (
-          <div className="text-[10px] font-mono text-ink-faint mt-0.5">{workout.starts_at.slice(0, 5)}</div>
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-ink text-paper">
-            Off-ice
-          </span>
-          {category && (
-            <span className="text-[9px] font-mono tracking-wider text-ink-faint uppercase">{category}</span>
+    <div className={`flex items-stretch ${first ? '' : 'border-t border-ink-hair'}`}>
+      <Link href={`/dashboard/workouts/${workout.id}`}
+        className="flex items-center gap-4 px-5 py-4 group flex-1 min-w-0">
+        <div className="flex-shrink-0 w-16 text-right">
+          <div className="font-serif text-sm text-ink">{formatDate(workout.occurred_on)}</div>
+          {workout.starts_at && (
+            <div className="text-[10px] font-mono text-ink-faint mt-0.5">{workout.starts_at.slice(0, 5)}</div>
           )}
-          <span className="font-medium text-ink group-hover:text-crimson transition-colors truncate">
-            {workout.title || workout.source_plan_title || 'Workout'}
-          </span>
         </div>
-        {workout.focus && <div className="text-xs text-ink-faint truncate">{workout.focus}</div>}
-      </div>
 
-      <div className="flex gap-6 flex-shrink-0 text-right text-xs">
-        <div>
-          <div className="font-mono text-sm text-ink">{workout.roster_count}</div>
-          <div className="kicker text-[9px] mt-0.5">Roster</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-ink text-paper">
+              Off-ice
+            </span>
+            {category && (
+              <span className="text-[9px] font-mono tracking-wider text-ink-faint uppercase">{category}</span>
+            )}
+            <span className="font-medium text-ink group-hover:text-crimson transition-colors truncate">
+              {workout.title || workout.source_plan_title || 'Workout'}
+            </span>
+            {/* Phase 16: release status badge */}
+            {workout.released_at ? (
+              <span className="text-[9px] font-mono tracking-wider uppercase text-sage-dark inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-sage-dark inline-block" aria-hidden />
+                Released
+              </span>
+            ) : (
+              <span className="text-[9px] font-mono tracking-wider uppercase text-crimson inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-crimson inline-block" aria-hidden />
+                Locked
+              </span>
+            )}
+          </div>
+          {workout.focus && <div className="text-xs text-ink-faint truncate">{workout.focus}</div>}
         </div>
-        <div>
-          <div className="font-mono text-sm text-ink">{workout.exercise_count}</div>
-          <div className="kicker text-[9px] mt-0.5">Exercises</div>
+
+        <div className="flex gap-6 flex-shrink-0 text-right text-xs">
+          <div>
+            <div className="font-mono text-sm text-ink">{workout.roster_count}</div>
+            <div className="kicker text-[9px] mt-0.5">Roster</div>
+          </div>
+          <div>
+            <div className="font-mono text-sm text-ink">{workout.exercise_count}</div>
+            <div className="kicker text-[9px] mt-0.5">Exercises</div>
+          </div>
+          <div>
+            <div className="font-mono text-sm text-ink">{workout.sets_logged}</div>
+            <div className="kicker text-[9px] mt-0.5">Sets</div>
+          </div>
         </div>
-        <div>
-          <div className="font-mono text-sm text-ink">{workout.sets_logged}</div>
-          <div className="kicker text-[9px] mt-0.5">Sets</div>
+      </Link>
+
+      {/* Phase 16: release chip — only when unreleased */}
+      {!workout.released_at && (
+        <div className="flex items-center pr-4">
+          <InlineReleaseButton workoutId={workout.id} />
         </div>
+      )}
+    </div>
+  );
+}
+
+function InlineReleaseButton({ workoutId }: { workoutId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const handleRelease = async () => {
+    setBusy(true);
+    const fd = new FormData();
+    fd.set('activity_id', workoutId);
+    await releaseWorkout(fd);
+    setBusy(false);
+    setConfirming(false);
+    router.refresh();
+  };
+
+  if (confirming) {
+    return (
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={handleRelease}
+          disabled={busy}
+          className="btn-primary !h-8 text-[11px] !px-3"
+        >
+          {busy ? '\u2026' : 'Confirm'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          disabled={busy}
+          className="btn-secondary !h-8 text-[11px] !px-3"
+        >
+          Cancel
+        </button>
       </div>
-    </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      className="btn-secondary !h-8 text-[11px] !px-3"
+    >
+      Release
+    </button>
   );
 }
 

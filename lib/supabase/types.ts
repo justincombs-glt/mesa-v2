@@ -249,6 +249,9 @@ export interface Activity {
   reviewed_with_player: boolean;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  // Phase 16: workout release gating (off-ice workouts only; null on other types)
+  released_at: string | null;
+  released_by: string | null;
   created_at: string;
   updated_at: string;
 }

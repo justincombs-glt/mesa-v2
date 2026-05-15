@@ -129,6 +129,7 @@ function WorkoutRow({ workout, first }: { workout: WorkoutWithSetCount; first: b
   const date = new Date(workout.occurred_on + 'T00:00:00').toLocaleDateString('en-US', {
     month: 'short', day: 'numeric',
   });
+  const locked = !workout.released_at;
 
   return (
     <Link
@@ -146,17 +147,25 @@ function WorkoutRow({ workout, first }: { workout: WorkoutWithSetCount; first: b
           <span className="text-[9px] font-mono tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-sage-dark text-paper">
             Off-ice
           </span>
+          {locked && (
+            <span className="text-[9px] font-mono tracking-wider uppercase text-crimson inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-crimson inline-block" aria-hidden />
+              Locked
+            </span>
+          )}
           <span className="text-sm font-medium text-ink truncate">{workout.title || 'Workout'}</span>
         </div>
         <div className="text-xs text-ink-faint truncate">
-          {workout.my_set_count > 0
-            ? `${workout.my_set_count} set${workout.my_set_count === 1 ? '' : 's'} logged`
-            : 'No sets logged yet'}
-          {workout.focus && ` · ${workout.focus}`}
+          {locked
+            ? 'Waiting for your trainer to release this workout'
+            : workout.my_set_count > 0
+              ? `${workout.my_set_count} set${workout.my_set_count === 1 ? '' : 's'} logged`
+              : 'No sets logged yet'}
+          {!locked && workout.focus && ` \u00b7 ${workout.focus}`}
         </div>
       </div>
       <div className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint group-hover:text-crimson">
-        Log →
+        {locked ? 'Preview \u2192' : 'Log \u2192'}
       </div>
     </Link>
   );
