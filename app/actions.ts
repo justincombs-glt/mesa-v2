@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { requireRole, requireProfile } from '@/lib/auth';
 import type { AppRole, GoalDomain, GoalCategory } from '@/lib/supabase/types';
+import { parseVideoUrl } from '@/lib/video-url';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Any = any;
@@ -2958,5 +2959,196 @@ export async function releaseWorkout(formData: FormData): Promise<{
   revalidatePath(`/dashboard/workouts/${activity_id}`);
   revalidatePath('/dashboard/workouts');
   revalidatePath('/dashboard/my-workouts');
+  return { ok: true };
+}
+
+// ============================================================================
+// Phase 17: Coach's Corner
+//
+// Write actions are restricted to admin/director/coach (Q1 scope locked).
+// Student marks-as-watched are open to the student themselves (RLS enforces).
+// All actions defense-in-depth verify the role server-side in addition to
+// the RLS gate.
+// ============================================================================
+
+
+/**
+ * Create a new Coach's Corner video post.
+ *
+ * Required form fields:
+ *   - for_date      YYYY-MM-DD
+ *   - title         1..200 chars
+ *   - url           must parse as a valid YouTube/Vimeo/Hudl URL (Q12 = B)
+ * Optional:
+ *   - description   up to 5000 chars
+ */
+export async function createCoachsCornerVideo(formData: FormData): Promise<{
+  ok: boolean; id?: string; error?: string;
+}> {
+  const profile = await requireRole('admin', 'director', 'coach');
+  const supabase = createClient();
+
+  const for_date = String(formData.get('for_date') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim();
+  const url = String(formData.get('url') ?? '').trim();
+
+  if (!for_date) return { ok: false, error: 'Pick a date.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(for_date)) return { ok: false, error: 'Date format must be YYYY-MM-DD.' };
+  if (!title) return { ok: false, error: 'Enter a title.' };
+  if (title.length > 200) return { ok: false, error: 'Title is too long (max 200).' };
+  if (description.length > 5000) return { ok: false, error: 'Description is too long (max 5000).' };
+  if (!url) return { ok: false, error: 'Paste a video URL.' };
+
+  const parsed = parseVideoUrl(url);
+  if (!parsed) {
+    return { ok: false, error: 'URL must be a YouTube, Vimeo, or Hudl link.' };
+  }
+
+  const { data, error } = await (supabase.from('coachs_corner_videos') as Any).insert({
+    for_date,
+    title,
+    description: description || null,
+    url,
+    provider: parsed.provider,
+    embed_id: parsed.embed_id,
+    posted_by: profile.id,
+  }).select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/coachs-corner');
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+/**
+ * Update an existing Coach's Corner video. Full-edit per Q6 = A — title,
+ * description, URL, and date are all editable. Re-validates the URL if it
+ * was changed.
+ */
+export async function updateCoachsCornerVideo(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireRole('admin', 'director', 'coach');
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  const for_date = String(formData.get('for_date') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim();
+  const url = String(formData.get('url') ?? '').trim();
+
+  if (!id) return { ok: false, error: 'Missing video id.' };
+  if (!for_date || !/^\d{4}-\d{2}-\d{2}$/.test(for_date)) return { ok: false, error: 'Pick a valid date.' };
+  if (!title) return { ok: false, error: 'Enter a title.' };
+  if (title.length > 200) return { ok: false, error: 'Title is too long.' };
+  if (description.length > 5000) return { ok: false, error: 'Description is too long.' };
+  if (!url) return { ok: false, error: 'Paste a video URL.' };
+
+  const parsed = parseVideoUrl(url);
+  if (!parsed) return { ok: false, error: 'URL must be a YouTube, Vimeo, or Hudl link.' };
+
+  const { error } = await (supabase.from('coachs_corner_videos') as Any).update({
+    for_date,
+    title,
+    description: description || null,
+    url,
+    provider: parsed.provider,
+    embed_id: parsed.embed_id,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/coachs-corner');
+  revalidatePath(`/dashboard/coachs-corner/${id}`);
+  return { ok: true };
+}
+
+/**
+ * Delete a Coach's Corner video. Cascades to coachs_corner_views via FK.
+ */
+export async function deleteCoachsCornerVideo(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireRole('admin', 'director', 'coach');
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing video id.' };
+
+  const { error } = await (supabase.from('coachs_corner_videos') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/coachs-corner');
+  return { ok: true };
+}
+
+/**
+ * Student marks a video as watched OR unmarks it (toggle behavior).
+ *
+ * Required form fields:
+ *   - video_id
+ *   - watched      '1' to mark watched, '0' to unmark
+ *
+ * The action verifies the caller is a student with a linked student record
+ * and then upserts (or deletes) a row in coachs_corner_views.
+ */
+export async function markCoachsCornerWatched(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireRole('student');
+  const supabase = createClient();
+
+  const video_id = String(formData.get('video_id') ?? '').trim();
+  const watched = String(formData.get('watched') ?? '') === '1';
+  if (!video_id) return { ok: false, error: 'Missing video.' };
+
+  // Resolve the student record for this profile
+  const { data: selfRow } = await supabase
+    .from('students').select('id').eq('profile_id', profile.id).maybeSingle();
+  if (!selfRow) return { ok: false, error: "Your account isn't linked to a student record." };
+  const student_id = (selfRow as { id: string }).id;
+
+  if (watched) {
+    // Upsert by (video_id, student_id) unique. If already watched, no-op.
+    const { error } = await (supabase.from('coachs_corner_views') as Any).upsert({
+      video_id,
+      student_id,
+      watched_at: new Date().toISOString(),
+    }, { onConflict: 'video_id,student_id' });
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await (supabase.from('coachs_corner_views') as Any)
+      .delete()
+      .eq('video_id', video_id)
+      .eq('student_id', student_id);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath('/dashboard/coachs-corner');
+  revalidatePath(`/dashboard/coachs-corner/${video_id}`);
+  return { ok: true };
+}
+
+/**
+ * Bump the caller's last_seen_coachs_corner_at to now.
+ *
+ * Called from the Coach's Corner list page on mount so the "new since you
+ * last looked" sidebar badge (Q11 = C) resets to zero after the user opens
+ * the page. Safe to call for any signed-in user — the column lives on
+ * profiles which every user already owns.
+ *
+ * Returns ok regardless — failure to update the timestamp shouldn't break
+ * the page load.
+ */
+export async function touchCoachsCornerLastSeen(): Promise<{ ok: boolean }> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  await (supabase.from('profiles') as Any)
+    .update({ last_seen_coachs_corner_at: new Date().toISOString() })
+    .eq('id', profile.id);
+
   return { ok: true };
 }

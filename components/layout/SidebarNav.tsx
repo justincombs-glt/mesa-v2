@@ -95,6 +95,7 @@ export function SidebarNav({ sections, currentPath, onNavigate, storageKey = 'de
                   href={item.href}
                   label={item.label}
                   icon={item.icon}
+                  badge={item.badge}
                   active={isActive(currentPath, item.href)}
                   onClick={onNavigate}
                 />
@@ -132,6 +133,7 @@ export function SidebarNav({ sections, currentPath, onNavigate, storageKey = 'de
                     href={item.href}
                     label={item.label}
                     icon={item.icon}
+                    badge={item.badge}
                     active={isActive(currentPath, item.href)}
                     onClick={onNavigate}
                   />
@@ -151,9 +153,12 @@ function isActive(currentPath: string | undefined, href: string): boolean {
 }
 
 function NavItem({
-  href, label, icon, active, onClick,
+  href, label, icon, active, onClick, badge,
 }: {
-  href: string; label: string; icon: ReactNode; active: boolean; onClick?: () => void;
+  href: string; label: string; icon: ReactNode; active: boolean;
+  onClick?: () => void;
+  /** Phase 17: optional small badge (e.g. unread count) shown to the right of the label. */
+  badge?: string;
 }) {
   return (
     <Link
@@ -166,7 +171,14 @@ function NavItem({
       }`}
     >
       <span className="w-4 h-4 flex-shrink-0">{icon}</span>
-      <span className="truncate">{label}</span>
+      <span className="truncate flex-1">{label}</span>
+      {badge && (
+        <span className={`flex-shrink-0 text-[10px] font-mono font-semibold rounded-full px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center ${
+          active ? 'bg-paper text-ink' : 'bg-crimson text-paper'
+        }`}>
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

@@ -15,12 +15,16 @@ interface AppShellProps {
   selectedSeason?: Season | null;
   allSeasons?: Season[];
   isArchivedView?: boolean;
+  /** Phase 17: count of Coach's Corner videos posted since user last visited the page. */
+  coachsCornerUnread?: number;
 }
 
 interface NavLink {
   href: string;
   label: string;
   icon: ReactNode;
+  /** Phase 17: optional small badge text shown next to label (e.g. unread count). */
+  badge?: string;
 }
 
 export interface NavSection {
@@ -29,7 +33,7 @@ export interface NavSection {
   items: NavLink[];
 }
 
-function navForRole(role: AppRole): NavSection[] {
+function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSection[] {
   const icons = {
     home: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>),
     family: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="3"/><circle cx="17" cy="7" r="2"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2M17 13a3 3 0 013 3v2"/></svg>),
@@ -45,10 +49,20 @@ function navForRole(role: AppRole): NavSection[] {
     tests: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>),
     settings: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>),
     nutrition: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a4 4 0 014 4c0 1.5-.7 2.8-2 4 1.3 1.2 2 2.5 2 4a4 4 0 01-8 0c0-1.5.7-2.8 2-4-1.3-1.2-2-2.5-2-4a4 4 0 014-4z"/><path d="M12 14v8"/></svg>),
+    video: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>),
   };
 
   const home = { href: '/dashboard', label: 'Home', icon: icons.home };
   const settings = { href: '/dashboard/settings', label: 'User Profile', icon: icons.settings };
+
+  // Phase 17: Coach's Corner — top-level for all roles (Q8 = A). Badge shows
+  // count of unviewed videos since the user last opened the page.
+  const coachsCorner: NavLink = {
+    href: '/dashboard/coachs-corner',
+    label: 'Coach\u2019s Corner',
+    icon: icons.video,
+    badge: ctx.coachsCornerUnread > 0 ? String(ctx.coachsCornerUnread) : undefined,
+  };
 
   switch (role) {
     case 'admin':
@@ -83,7 +97,7 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/exercises', label: 'Exercises', icon: icons.exercises },
           ],
         },
-        { group: null, items: [settings] },
+        { group: null, items: [coachsCorner, settings] },
       ];
     case 'director':
       return [
@@ -115,7 +129,7 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/practice-plans', label: 'Practice Plans', icon: icons.practices },
           ],
         },
-        { group: null, items: [settings] },
+        { group: null, items: [coachsCorner, settings] },
       ];
     case 'coach':
       return [
@@ -134,7 +148,7 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/activities', label: 'Game Review', icon: icons.activities },
           ],
         },
-        { group: null, items: [settings] },
+        { group: null, items: [coachsCorner, settings] },
       ];
     case 'trainer':
       return [
@@ -159,7 +173,7 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/nutrition-overview', label: 'Nutrition', icon: icons.nutrition },
           ],
         },
-        { group: null, items: [settings] },
+        { group: null, items: [coachsCorner, settings] },
       ];
     case 'student':
       return [
@@ -184,21 +198,22 @@ function navForRole(role: AppRole): NavSection[] {
             { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
           ],
         },
-        { group: null, items: [settings] },
+        { group: null, items: [coachsCorner, settings] },
       ];
     case 'parent':
       return [
         { group: null, items: [
           home,
           { href: '/dashboard/family', label: 'My Family', icon: icons.family },
+          coachsCorner,
           settings,
         ]},
       ];
   }
 }
 
-export function AppShell({ role, email, displayName, children, currentPath, selectedSeason, allSeasons, isArchivedView }: AppShellProps) {
-  const nav = navForRole(role);
+export function AppShell({ role, email, displayName, children, currentPath, selectedSeason, allSeasons, isArchivedView, coachsCornerUnread = 0 }: AppShellProps) {
+  const nav = navForRole(role, { coachsCornerUnread });
 
   return (
     <div className="min-h-screen bg-ivory flex flex-col md:flex-row">

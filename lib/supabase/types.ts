@@ -52,6 +52,8 @@ export interface Profile {
   role: AppRole;
   phone: string | null;
   date_of_birth: string | null;
+  // Phase 17: last time the user opened Coach's Corner (for "new since" badge)
+  last_seen_coachs_corner_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -449,4 +451,30 @@ export interface NutritionEntry {
   logged_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================================
+// Phase 17: Coach's Corner
+// ============================================================================
+
+export type CoachsCornerProvider = 'youtube' | 'vimeo' | 'hudl';
+
+export interface CoachsCornerVideo {
+  id: string;
+  for_date: string;        // YYYY-MM-DD
+  title: string;
+  description: string | null;
+  url: string;
+  provider: CoachsCornerProvider;
+  embed_id: string | null;
+  posted_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CoachsCornerView {
+  id: string;
+  video_id: string;
+  student_id: string;
+  watched_at: string;
 }
