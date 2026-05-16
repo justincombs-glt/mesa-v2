@@ -85,12 +85,13 @@ export default async function MyWorkoutsPage() {
 
   // Load exercise library + workout-plan templates for the New Workout modal
   const [{ data: exRows }, { data: planRows }] = await Promise.all([
-    supabase.from('exercises').select('id, name, category, body_part, default_sets, default_reps')
-      .order('name').limit(500),
+    supabase.from('exercises').select('id, title, category, default_sets, default_reps')
+      .eq('active', true)
+      .order('title').limit(500),
     supabase.from('workout_plans').select('id, title, focus')
       .eq('is_template', true).order('title').limit(100),
   ]);
-  const exercises = (exRows ?? []) as Array<Pick<Exercise, 'id' | 'name' | 'category' | 'body_part' | 'default_sets' | 'default_reps'>>;
+  const exercises = (exRows ?? []) as Array<Pick<Exercise, 'id' | 'title' | 'category' | 'default_sets' | 'default_reps'>>;
   const plans = (planRows ?? []) as Array<Pick<WorkoutPlan, 'id' | 'title' | 'focus'>>;
 
   const today = new Date().toISOString().slice(0, 10);

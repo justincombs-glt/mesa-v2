@@ -17,9 +17,8 @@ interface ExerciseLite {
 
 interface AddableExercise {
   id: string;          // exercises.id
-  name: string;
+  title: string;
   category: string | null;
-  body_part: string | null;
 }
 
 interface Props {
@@ -63,7 +62,7 @@ export function ManageExercisesPanel({
     const q = query.trim().toLowerCase();
     if (!q) return addableExercises;
     return addableExercises.filter((e) => {
-      const hay = `${e.name} ${e.category ?? ''} ${e.body_part ?? ''}`.toLowerCase();
+      const hay = `${e.title} ${e.category ?? ''}`.toLowerCase();
       return hay.includes(q);
     });
   }, [addableExercises, query]);
@@ -193,10 +192,10 @@ export function ManageExercisesPanel({
                   disabled={busy}
                   className={`flex items-center gap-3 w-full text-left px-3 py-2 ${idx === 0 ? '' : 'border-t border-ink-hair'} hover:bg-ivory transition-colors disabled:opacity-50`}
                 >
-                  <span className="text-sm text-ink truncate flex-1">{ex.name}</span>
-                  {(ex.category || ex.body_part) && (
+                  <span className="text-sm text-ink truncate flex-1">{ex.title}</span>
+                  {ex.category && (
                     <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint flex-shrink-0">
-                      {[ex.category, ex.body_part].filter(Boolean).join(' \u00b7 ')}
+                      {ex.category}
                     </span>
                   )}
                   <span className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint">

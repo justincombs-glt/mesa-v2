@@ -130,15 +130,16 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
   // Phase 18b: only load the exercise library when the viewer is the creator
   // (since only they see the manage panel). Avoids wasted query for trainers
   // and athletes opening trainer-scheduled workouts.
-  let addableExercises: Array<{ id: string; name: string; category: string | null; body_part: string | null }> = [];
+  let addableExercises: Array<{ id: string; title: string; category: string | null }> = [];
   if (isCreator) {
     const { data: exRows } = await supabase
       .from('exercises')
-      .select('id, name, category, body_part')
-      .order('name')
+      .select('id, title, category')
+      .eq('active', true)
+      .order('title')
       .limit(500);
     addableExercises = (exRows ?? []) as Array<{
-      id: string; name: string; category: string | null; body_part: string | null;
+      id: string; title: string; category: string | null;
     }>;
   }
 

@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import type { Exercise, WorkoutPlan } from '@/lib/supabase/types';
 
-type ExerciseLite = Pick<Exercise, 'id' | 'name' | 'category' | 'body_part' | 'default_sets' | 'default_reps'>;
+type ExerciseLite = Pick<Exercise, 'id' | 'title' | 'category' | 'default_sets' | 'default_reps'>;
 type PlanLite = Pick<WorkoutPlan, 'id' | 'title' | 'focus'>;
 
 interface Props {
@@ -83,7 +83,7 @@ function NewWorkoutModal({
     const q = query.trim().toLowerCase();
     if (!q) return exercises;
     return exercises.filter((e) => {
-      const hay = `${e.name} ${e.category ?? ''} ${e.body_part ?? ''}`.toLowerCase();
+      const hay = `${e.title} ${e.category ?? ''}`.toLowerCase();
       return hay.includes(q);
     });
   }, [exercises, query]);
@@ -238,10 +238,10 @@ function NewWorkoutModal({
                         </svg>
                       )}
                     </span>
-                    <span className="text-sm text-ink truncate flex-1">{ex.name}</span>
-                    {(ex.category || ex.body_part) && (
+                    <span className="text-sm text-ink truncate flex-1">{ex.title}</span>
+                    {ex.category && (
                       <span className="text-[10px] font-mono uppercase tracking-wider text-ink-faint flex-shrink-0">
-                        {[ex.category, ex.body_part].filter(Boolean).join(' \u00b7 ')}
+                        {ex.category}
                       </span>
                     )}
                   </button>
