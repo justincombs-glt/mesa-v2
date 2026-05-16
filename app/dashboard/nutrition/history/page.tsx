@@ -8,7 +8,7 @@ import { HistoryListView } from '@/components/nutrition/HistoryListView';
 export const dynamic = 'force-dynamic';
 
 export default async function NutritionHistoryPage() {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
 
   const student = await getLinkedStudentForProfile(profile.id);
   if (!student) {

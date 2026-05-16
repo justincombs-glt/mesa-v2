@@ -72,11 +72,11 @@ export async function createInvite(formData: FormData) {
 
   if (!email || !role) return { ok: false, error: 'Email and role are required.' };
 
-  const validRoles: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent'];
+  const validRoles: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent', 'player'];
   if (!validRoles.includes(role)) return { ok: false, error: 'Invalid role' };
 
-  // Age gate: sub-13 students cannot have their own login account (Q2 = C)
-  if (role === 'student' && linked_student_id) {
+  // Age gate: sub-13 students/players cannot have their own login account (Q2 = C from Phase 6)
+  if ((role === 'student' || role === 'player') && linked_student_id) {
     const { data: studentRow } = await supabase
       .from('students').select('date_of_birth, full_name').eq('id', linked_student_id).single();
     if (studentRow) {
@@ -88,7 +88,7 @@ export async function createInvite(formData: FormData) {
         if (dob > thirteenYearsAgo) {
           return {
             ok: false,
-            error: `${s.full_name} is under 13. Minor students can't have their own login account — link a parent instead.`,
+            error: `${s.full_name} is under 13. Minor athletes can't have their own login account \u2014 link a parent instead.`,
           };
         }
       }
@@ -3151,4 +3151,45 @@ export async function touchCoachsCornerLastSeen(): Promise<{ ok: boolean }> {
     .eq('id', profile.id);
 
   return { ok: true };
+}
+
+// ============================================================================
+// Phase 18a: Player CRUD
+//
+// Players (students.category = 'player') are external athletes paying for à
+// la carte services. Differences from createStudent:
+//   - Sets category = 'player'
+//   - Does NOT auto-enroll in any season (Players aren't on academy rosters)
+//
+// Update + deactivate flows reuse the existing student actions since they
+// don't care about category. Only create is distinct.
+// ============================================================================
+
+export async function createPlayer(formData: FormData) {
+  await requireRole('admin', 'director', 'coach', 'trainer');
+  const supabase = createClient();
+
+  const full_name = String(formData.get('full_name') ?? '').trim();
+  const date_of_birth = String(formData.get('date_of_birth') ?? '').trim() || null;
+  const jersey_number = String(formData.get('jersey_number') ?? '').trim() || null;
+  const position = (String(formData.get('position') ?? '').trim() || null) as 'F' | 'D' | 'G' | null;
+  const dominant_hand = (String(formData.get('dominant_hand') ?? '').trim() || null) as 'L' | 'R' | null;
+  const team_label = String(formData.get('team_label') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+
+  if (!full_name) return { ok: false, error: "Player's name is required." };
+
+  const { data, error } = await (supabase.from('students') as Any)
+    .insert({
+      full_name, date_of_birth, jersey_number, position, dominant_hand,
+      team_label, notes,
+      category: 'player',
+    })
+    .select('id').single();
+
+  if (error) return { ok: false, error: error.message };
+  const playerId = (data as { id: string }).id;
+
+  revalidatePath('/dashboard/players');
+  return { ok: true, id: playerId };
 }

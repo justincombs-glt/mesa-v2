@@ -7,7 +7,7 @@ import type { PerformanceTest, PerformanceTestResult } from '@/lib/supabase/type
 export const dynamic = 'force-dynamic';
 
 export default async function MyPerformancePage() {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
   const supabase = createClient();
 
   const student = await getLinkedStudentForProfile(profile.id);

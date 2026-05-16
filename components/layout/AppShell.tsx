@@ -50,6 +50,7 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
     settings: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>),
     nutrition: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a4 4 0 014 4c0 1.5-.7 2.8-2 4 1.3 1.2 2 2.5 2 4a4 4 0 01-8 0c0-1.5.7-2.8 2-4-1.3-1.2-2-2.5-2-4a4 4 0 014-4z"/><path d="M12 14v8"/></svg>),
     video: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>),
+    player: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0114 0v2"/><circle cx="18" cy="6" r="2.5" fill="currentColor"/></svg>),
   };
 
   const home = { href: '/dashboard', label: 'Home', icon: icons.home };
@@ -64,6 +65,14 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
     badge: ctx.coachsCornerUnread > 0 ? String(ctx.coachsCornerUnread) : undefined,
   };
 
+  // Phase 18a: Players management link — shown to admin/director/coach/trainer
+  // (Q10 = A, Q12 = A — separate from "Students" list)
+  const players: NavLink = {
+    href: '/dashboard/players',
+    label: 'Players',
+    icon: icons.player,
+  };
+
   switch (role) {
     case 'admin':
       return [
@@ -74,6 +83,7 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
             { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
             { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
             { href: '/dashboard/users', label: 'Users', icon: icons.users },
+            players,
           ],
         },
         {
@@ -108,6 +118,7 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
             { href: '/dashboard/seasons', label: 'Seasons', icon: icons.activities },
             { href: '/dashboard/invite', label: 'Add Users', icon: icons.invites },
             { href: '/dashboard/students', label: 'Students', icon: icons.family },
+            players,
           ],
         },
         {
@@ -148,6 +159,10 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
             { href: '/dashboard/activities', label: 'Game Review', icon: icons.activities },
           ],
         },
+        {
+          group: 'Athletes',
+          items: [players],
+        },
         { group: null, items: [coachsCorner, settings] },
       ];
     case 'trainer':
@@ -171,6 +186,7 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
           group: 'Athletes',
           items: [
             { href: '/dashboard/nutrition-overview', label: 'Nutrition', icon: icons.nutrition },
+            players,
           ],
         },
         { group: null, items: [coachsCorner, settings] },
@@ -208,6 +224,39 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
           coachsCorner,
           settings,
         ]},
+      ];
+    case 'player':
+      // Phase 18a: Player role — slim version of student menu.
+      // No practices (Q-scope), no trainer-scheduled workouts. Self-logged
+      // workouts come in Phase 18b — until then My Workouts shows empty.
+      return [
+        { group: null, items: [home] },
+        {
+          group: 'Off Ice',
+          items: [
+            { href: '/dashboard/my-workouts', label: 'My Workouts', icon: icons.workouts },
+            { href: '/dashboard/nutrition', label: 'Nutrition', icon: icons.nutrition },
+          ],
+        },
+        {
+          group: 'Performance',
+          items: [
+            { href: '/dashboard/my-performance', label: 'APA Sessions', icon: icons.tests },
+          ],
+        },
+        {
+          group: 'Game Review',
+          items: [
+            { href: '/dashboard/my-games', label: 'My Games', icon: icons.activities },
+          ],
+        },
+        {
+          group: 'Goal Management',
+          items: [
+            { href: '/dashboard/my-goals', label: 'My Goals', icon: icons.goals },
+          ],
+        },
+        { group: null, items: [coachsCorner, settings] },
       ];
   }
 }

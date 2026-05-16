@@ -1,6 +1,6 @@
 // MESA v2 type definitions
 
-export type AppRole = 'admin' | 'director' | 'coach' | 'trainer' | 'student' | 'parent';
+export type AppRole = 'admin' | 'director' | 'coach' | 'trainer' | 'student' | 'parent' | 'player';
 export type PlayerPosition = 'F' | 'D' | 'G';
 export type GoalDomain = 'on_ice' | 'off_ice';
 export type GoalCategory =
@@ -58,6 +58,8 @@ export interface Profile {
   updated_at: string;
 }
 
+export type StudentCategory = 'student' | 'player';
+
 export interface Student {
   id: string;
   full_name: string;
@@ -69,6 +71,8 @@ export interface Student {
   notes: string | null;
   active: boolean;
   profile_id: string | null;
+  // Phase 18a: distinguishes academy 'student' from external 'player'
+  category: StudentCategory;
   created_at: string;
   updated_at: string;
 }

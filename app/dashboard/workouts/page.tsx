@@ -33,7 +33,7 @@ export default async function WorkoutsPage() {
     supabase.from('workout_plans').select('*')
       .eq('is_template', true).order('title'),
     supabase.from('students').select('id, full_name, jersey_number, active')
-      .eq('active', true).order('full_name'),
+      .eq('active', true).eq('category', 'student').order('full_name'),
   ]);
 
   const workouts = (wRows ?? []) as Activity[];

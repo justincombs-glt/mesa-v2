@@ -96,9 +96,10 @@ export default async function PracticeDetailPage({ params }: { params: { id: str
   }
 
   // Pool of students who could be added to the roster (active + not already in roster)
+  // Phase 18a: exclude Players — they don't get added to practices.
   const { data: allStudentRows } = await supabase
     .from('students').select('id, full_name, jersey_number, position, active')
-    .eq('active', true).order('full_name');
+    .eq('active', true).eq('category', 'student').order('full_name');
   const allActive = (allStudentRows ?? []) as Array<Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'position' | 'active'>>;
   const rosterIds = new Set(rosterLinks.map((r) => r.student_id));
   const addableStudents = allActive.filter((s) => !rosterIds.has(s.id));

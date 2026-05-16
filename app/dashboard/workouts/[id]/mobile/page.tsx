@@ -12,7 +12,7 @@ import type { RosterStudent, ResolvedExercise, SetMap } from '../page';
 export const dynamic = 'force-dynamic';
 
 export default async function MobileWorkoutPage({ params }: { params: { id: string } }) {
-  const profile = await requireRole('admin', 'director', 'trainer', 'student');
+  const profile = await requireRole('admin', 'director', 'trainer', 'student', 'player');
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
 

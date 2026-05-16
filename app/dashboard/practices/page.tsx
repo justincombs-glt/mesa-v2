@@ -29,9 +29,10 @@ export default async function PracticesPage() {
   const practices = (practiceRows ?? []) as Activity[];
 
   // Active students (for the "New practice" modal roster)
+  // Phase 18a: exclude Players — they don't get added to practices.
   const { data: studentRows } = await supabase
     .from('students').select('id, full_name, jersey_number, position, active')
-    .eq('active', true).order('full_name');
+    .eq('active', true).eq('category', 'student').order('full_name');
   const students = (studentRows ?? []) as Array<Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'position' | 'active'>>;
 
   // Roster count + attendance count per practice

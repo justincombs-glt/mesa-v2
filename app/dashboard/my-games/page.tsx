@@ -10,7 +10,7 @@ import type { Activity } from '@/lib/supabase/types';
 export const dynamic = 'force-dynamic';
 
 export default async function MyGamesPage() {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
   const seasonId = seasonCtx.selected?.id ?? null;

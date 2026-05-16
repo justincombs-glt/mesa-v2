@@ -9,7 +9,7 @@ import type { GoalPlan } from '@/lib/supabase/types';
 export const dynamic = 'force-dynamic';
 
 export default async function MyGoalsPage() {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
   const seasonId = seasonCtx.selected?.id;

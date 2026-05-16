@@ -22,6 +22,9 @@ export default async function DashboardHome() {
   if (profile.role === 'student') {
     return <StudentHome profileId={profile.id} profileName={displayNameOf(profile)} />;
   }
+  if (profile.role === 'player') {
+    return <PlayerHome profileId={profile.id} profileName={displayNameOf(profile)} />;
+  }
   if (profile.role === 'parent') {
     return <ParentHome profileId={profile.id} profileName={displayNameOf(profile)} />;
   }
@@ -88,6 +91,52 @@ async function StudentHome({ profileId, profileName }: { profileId: string; prof
         kicker={data.seasonName ? `Student · ${data.seasonName}` : 'Student'}
         title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
         description="Your goals, schedule, and test results for the current season."
+      />
+      <StudentDashboardView data={data} />
+    </>
+  );
+}
+
+async function PlayerHome({ profileId, profileName }: { profileId: string; profileName: string }) {
+  // Phase 18a: Player home is structurally identical to StudentHome but
+  // with different kicker copy. Reuses StudentDashboardView since the data
+  // shape is the same — Players just don't have practice entries (DB trigger
+  // ensures activity_students never includes a practice for them).
+  const student = await getLinkedStudentForProfile(profileId);
+  if (!student) {
+    return (
+      <>
+        <PageHeader
+          kicker="Player"
+          title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
+          description="Your account isn't linked to a player record yet."
+        />
+        <div className="card-base p-8 text-center">
+          <p className="text-sm text-ink-dim max-w-md mx-auto">
+            Ask the academy office to link your profile to your player record. Once linked, this page will show your goals, sessions, and games.
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  const data = await buildStudentDashboard(student.id);
+  if (!data) {
+    return (
+      <PageHeader
+        kicker="Player"
+        title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
+        description="Couldn't load your dashboard."
+      />
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        kicker="Player"
+        title={<>Welcome, <em className="italic text-crimson">{profileName}</em>.</>}
+        description="Your goals, sessions, games, and self-logged training."
       />
       <StudentDashboardView data={data} />
     </>

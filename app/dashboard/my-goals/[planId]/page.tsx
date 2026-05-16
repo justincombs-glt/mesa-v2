@@ -17,7 +17,7 @@ import type { AttachedComposite } from '@/app/dashboard/goal-management/[planId]
 export const dynamic = 'force-dynamic';
 
 export default async function MyPlanDetailPage({ params }: { params: { planId: string } }) {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
 

@@ -12,7 +12,7 @@ interface WorkoutWithSetCount extends Activity {
 }
 
 export default async function MyWorkoutsPage() {
-  const profile = await requireRole('student');
+  const profile = await requireRole('student', 'player');
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
   const seasonId = seasonCtx.selected?.id ?? null;
