@@ -191,7 +191,8 @@ export async function GET(req: NextRequest) {
 // ----------------------------------------------------------------------------
 
 async function _logSend(
-  supabase: ReturnType<typeof createClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
   profileId: string,
   rangeStart: string,
   rangeEnd: string,

@@ -29,7 +29,13 @@
 // bypass RLS since the digest aggregates data across users).
 // ============================================================================
 
-import type { SupabaseClient } from '@supabase/supabase-js';
+// Loose type for the Supabase client. The strict generic types from
+// @supabase/supabase-js diverge across versions and helper utilities (auth
+// helpers, ssr helpers, plain JS), causing TypeScript variance errors when
+// passing clients between modules. Treating the client as any here keeps the
+// helpers callable from any caller — same pattern used by app/actions.ts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabaseClient = any;
 
 // ----------------------------------------------------------------------------
 // Types
@@ -79,7 +85,7 @@ export interface DigestContent {
  *     own student row)
  */
 export async function buildDigestForProfile(
-  supabase: SupabaseClient,
+  supabase: AnySupabaseClient,
   profileId: string,
   rangeStart: string,   // YYYY-MM-DD (e.g. last Monday)
   rangeEnd: string,     // YYYY-MM-DD (today / cutoff for "past")
@@ -150,7 +156,7 @@ interface AthleteRef {
  * For parents, return all linked student rows via family_links.
  */
 async function _resolveAthletesForProfile(
-  supabase: SupabaseClient,
+  supabase: AnySupabaseClient,
   profileId: string,
   role: string,
 ): Promise<AthleteRef[]> {
@@ -184,7 +190,7 @@ async function _resolveAthletesForProfile(
  * Build the per-athlete digest content. All queries scoped to this one student.
  */
 async function _buildAthleteDigest(
-  supabase: SupabaseClient,
+  supabase: AnySupabaseClient,
   athlete: AthleteRef,
   rangeStart: string,
   rangeEnd: string,
