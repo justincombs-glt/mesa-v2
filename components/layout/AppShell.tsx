@@ -60,7 +60,7 @@ function navForRole(role: AppRole, ctx: { coachsCornerUnread: number }): NavSect
   // count of unviewed videos since the user last opened the page.
   const coachsCorner: NavLink = {
     href: '/dashboard/coachs-corner',
-    label: 'Coach\u2019s Corner',
+    label: 'Coach’s Corner',
     icon: icons.video,
     badge: ctx.coachsCornerUnread > 0 ? String(ctx.coachsCornerUnread) : undefined,
   };
