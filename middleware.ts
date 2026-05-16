@@ -31,12 +31,18 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname === '/sign-in' || pathname.startsWith('/auth/');
+  const isAuthRoute =
+    pathname === '/sign-in' ||
+    pathname === '/sign-up' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname.startsWith('/auth/');
   const isPublic =
     pathname === '/' ||
     isAuthRoute ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/health/webhook') ||
+    pathname.startsWith('/api/test-email') ||
     pathname === '/favicon.ico';
 
   if (!user && !isPublic) {
@@ -46,7 +52,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && pathname === '/sign-in') {
+  if (user && (pathname === '/sign-in' || pathname === '/sign-up' || pathname === '/forgot-password')) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/dashboard';
     redirectUrl.searchParams.delete('next');

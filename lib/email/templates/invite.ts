@@ -41,7 +41,10 @@ export function buildInviteEmail(params: InviteEmailParams): {
 
   // Strip trailing slash if present so URL building is predictable
   const baseUrl = siteUrl.replace(/\/+$/, '');
-  const signInUrl = `${baseUrl}/sign-in`;
+  // Phase 8b: invite recipients land on /sign-up where they set their initial
+  // password. Email is prefilled via the query param so they can't accidentally
+  // type a different address than the one the invite was issued to.
+  const signUpUrl = `${baseUrl}/sign-up?email=${encodeURIComponent(toEmail)}`;
 
   const subject = `You\u2019ve been invited to MESA`;
 
@@ -51,10 +54,10 @@ export function buildInviteEmail(params: InviteEmailParams): {
     ``,
     `${invitedByName} has invited you to join MESA as a ${roleLabel}.`,
     ``,
-    `To accept, sign in using this email address (${toEmail}):`,
-    `${signInUrl}`,
+    `To accept, set up your account at:`,
+    `${signUpUrl}`,
     ``,
-    `You\u2019ll receive a magic link in your inbox. Click it to access your account \u2014 no password required.`,
+    `You\u2019ll pick a password on the next screen, then you\u2019re in.`,
   ];
   if (note) {
     textLines.push('', `Note from ${invitedByName}: ${note}`);
@@ -101,7 +104,7 @@ export function buildInviteEmail(params: InviteEmailParams): {
                 <strong style="color:#0b1a2f;">${escapeHtml(invitedByName)}</strong> invited you to join MESA as a <strong style="color:#d4342f;">${escapeHtml(roleLabel)}</strong>.
               </p>
               <p style="margin:0 0 24px 0; font-size:15px; line-height:1.55; color:#0b1a2f;">
-                To accept, click below and sign in with this email address:
+                Click below to set up your account. You\u2019ll use this email to sign in:
               </p>
               <p style="margin:0 0 24px 0; font-size:14px; color:#5a5a5a; background-color:#fafaf7; padding:12px 16px; border-radius:6px; font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;">
                 ${escapeHtml(toEmail)}
@@ -109,14 +112,14 @@ export function buildInviteEmail(params: InviteEmailParams): {
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;">
                 <tr>
                   <td style="background-color:#0b1a2f; border-radius:6px;">
-                    <a href="${escapeAttr(signInUrl)}" style="display:inline-block; padding:14px 28px; color:#ffffff; text-decoration:none; font-size:15px; font-weight:500;">
-                      Sign in to MESA
+                    <a href="${escapeAttr(signUpUrl)}" style="display:inline-block; padding:14px 28px; color:#ffffff; text-decoration:none; font-size:15px; font-weight:500;">
+                      Set up your account
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin:0 0 24px 0; font-size:13px; line-height:1.55; color:#5a5a5a;">
-                You\u2019ll receive a magic link in your inbox. Click it to access your account \u2014 no password required.
+                You\u2019ll pick a password on the next screen. Takes about 30 seconds.
               </p>
               ${note ? `<div style="margin:24px 0 0 0; padding:16px; background-color:#fafaf7; border-left:3px solid #7a9b7e; border-radius:4px;">
                 <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#7a7a7a; margin-bottom:6px;">Note from ${escapeHtml(invitedByName)}</div>
