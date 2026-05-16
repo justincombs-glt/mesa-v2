@@ -43,6 +43,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/health/webhook') ||
     pathname.startsWith('/api/test-email') ||
+    pathname.startsWith('/api/cron/') ||
+    pathname === '/unsubscribe' ||
     pathname === '/favicon.ico';
 
   if (!user && !isPublic) {
