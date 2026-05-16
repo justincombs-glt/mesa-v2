@@ -7,9 +7,9 @@ import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import type { Invite, AppRole, Student } from '@/lib/supabase/types';
 
-const ROLES: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent'];
+const ROLES: AppRole[] = ['admin', 'director', 'coach', 'trainer', 'student', 'parent', 'player'];
 
-type StudentLite = Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'date_of_birth' | 'profile_id' | 'active'>;
+type StudentLite = Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'date_of_birth' | 'profile_id' | 'active' | 'category'>;
 
 interface Props {
   pending: Invite[];
@@ -125,29 +125,33 @@ function InviteFormModal({ open, onClose, students }: {
           </select>
         </FormField>
 
-        {role === 'student' && (
+        {(role === 'student' || role === 'player') && (
           <FormField
-            label="Link to student record"
-            help="Optional. Pick which student record this account represents. Required when enforcing the 13+ age rule.">
+            label={role === 'player' ? 'Link to player record' : 'Link to student record'}
+            help={role === 'player'
+              ? 'Optional. Pick which player record this account represents. Required when enforcing the 13+ age rule.'
+              : 'Optional. Pick which student record this account represents. Required when enforcing the 13+ age rule.'}>
             <select name="linked_student_id" value={linkedStudentId} onChange={(e) => setLinkedStudentId(e.target.value)} className="input-base">
-              <option value="">— Not linked —</option>
-              {students.map((s) => {
-                const minor = isUnder13(s.date_of_birth);
-                return (
-                  <option key={s.id} value={s.id} disabled={minor}>
-                    {s.full_name}
-                    {s.jersey_number ? ` · #${s.jersey_number}` : ''}
-                    {minor ? ' (under 13 — not eligible)' : ''}
-                  </option>
-                );
-              })}
+              <option value="">&mdash; Not linked &mdash;</option>
+              {students
+                .filter((s) => s.category === role)
+                .map((s) => {
+                  const minor = isUnder13(s.date_of_birth);
+                  return (
+                    <option key={s.id} value={s.id} disabled={minor}>
+                      {s.full_name}
+                      {s.jersey_number ? ` · #${s.jersey_number}` : ''}
+                      {minor ? ' (under 13 — not eligible)' : ''}
+                    </option>
+                  );
+                })}
             </select>
           </FormField>
         )}
 
-        {role === 'student' && selectedIsMinor && (
+        {(role === 'student' || role === 'player') && selectedIsMinor && (
           <div className="text-sm text-crimson bg-crimson/10 border border-crimson/30 rounded p-3">
-            {selectedStudent?.full_name} is under 13. Minor students can&apos;t have their own login account. Link a parent to the student record instead.
+            {selectedStudent?.full_name} is under 13. Minor athletes can&apos;t have their own login account. Link a parent to the athlete record instead.
           </div>
         )}
 
@@ -160,7 +164,7 @@ function InviteFormModal({ open, onClose, students }: {
 
         <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-ink-hair">
           <button type="button" onClick={onClose} className="btn-secondary !h-10 text-[13px]">Cancel</button>
-          <button type="submit" disabled={saving || (role === 'student' && selectedIsMinor)}
+          <button type="submit" disabled={saving || ((role === 'student' || role === 'player') && selectedIsMinor)}
             className="btn-primary !h-10 text-[13px] disabled:opacity-50 disabled:cursor-not-allowed">
             {saving ? 'Sending…' : 'Send invite'}
           </button>

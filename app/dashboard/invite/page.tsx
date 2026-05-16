@@ -13,15 +13,15 @@ export default async function InvitePage() {
   const [{ data: inviteRows }, { data: studentRows }] = await Promise.all([
     supabase.from('invites').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     supabase.from('students')
-      .select('id, full_name, jersey_number, date_of_birth, profile_id, active')
+      .select('id, full_name, jersey_number, date_of_birth, profile_id, active, category')
       .eq('active', true)
-      .is('profile_id', null)  // only students without an account yet
+      .is('profile_id', null)  // only athletes without an account yet
       .order('full_name'),
   ]);
 
   const pending = (inviteRows ?? []) as Invite[];
   const students = (studentRows ?? []) as Array<
-    Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'date_of_birth' | 'profile_id' | 'active'>
+    Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'date_of_birth' | 'profile_id' | 'active' | 'category'>
   >;
 
   return (
@@ -29,7 +29,7 @@ export default async function InvitePage() {
       <PageHeader
         kicker="Director · Add Users"
         title={<>Invite <em className="italic text-crimson">a member</em>.</>}
-        description="Send invites to coaches, trainers, parents, or students. When they sign up with the invited email, the role you chose is assigned automatically."
+        description="Send invites to coaches, trainers, parents, students, or players. When they sign up with the invited email, the role you chose is assigned automatically."
         actions={<InviteClient pending={[]} students={students} addOnly />}
       />
       <InviteClient pending={pending} students={students} />
