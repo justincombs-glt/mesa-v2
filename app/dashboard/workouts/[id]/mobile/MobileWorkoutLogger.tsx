@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { upsertWorkoutSet, deleteWorkoutSet } from '@/app/actions';
+import { ManageExercisesPanel } from './ManageExercisesPanel';
 import type { Activity } from '@/lib/supabase/types';
 import type { RosterStudent, ResolvedExercise, SetCell, SetMap } from '../page';
 
@@ -25,6 +26,23 @@ interface Props {
   studentMode?: boolean;
   /** Whether trash buttons appear on existing sets. False for students on multi-athlete workouts (Q7=C). */
   canDeleteSets?: boolean;
+  /**
+   * Phase 18b: true when the viewer created this workout themselves
+   * (activities.logged_by = viewer.profile_id). Enables the "Manage
+   * exercises" affordance for adding/removing/reordering exercises mid-flight.
+   */
+  isCreator?: boolean;
+  /**
+   * Phase 18b: full exercise library — only used when isCreator is true,
+   * for the "Add exercise" picker inside the manage panel. Empty array
+   * when not needed to avoid wasted server work.
+   */
+  addableExercises?: Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    body_part: string | null;
+  }>;
 }
 
 const REP_CHIPS = [3, 5, 8, 10, 12, 15];
@@ -33,10 +51,13 @@ const RPE_CHIPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export function MobileWorkoutLogger({
   workout, roster, exercises, setMap, readOnly,
   locked = false, studentMode = false, canDeleteSets = true,
+  isCreator = false, addableExercises = [],
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [hideAbsent, setHideAbsent] = useState(false);
   const [absentIds, setAbsentIds] = useState<Set<string>>(new Set());
+  // Phase 18b: Manage Exercises panel open/closed (for creators only)
+  const [manageOpen, setManageOpen] = useState(false);
   // For student mode (single athlete), default the card to expanded so they don't
   // have to tap to start. For trainer mode, leave collapsed (they pick which athlete).
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(
@@ -89,27 +110,39 @@ export function MobileWorkoutLogger({
 
       {/* Exercise pills - sticks under AppShell hamburger top bar on mobile */}
       <div className="sticky top-[60px] md:top-0 z-20 bg-ivory border-b border-ink-hair">
-        <div className="flex gap-2 overflow-x-auto px-3 py-2.5 scrollbar-hide">
-          {exercises.map((ex, idx) => {
-            const isActive = idx === activeIdx;
-            return (
-              <button
-                key={ex.id}
-                onClick={() => {
-                  setActiveIdx(idx);
-                  setExpandedStudentId(studentMode && roster.length === 1 ? roster[0].id : null);
-                }}
-                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                  isActive
-                    ? 'bg-ink text-paper'
-                    : 'bg-paper text-ink-dim border border-ink-hair'
-                }`}
-              >
-                <span className="text-[10px] font-mono opacity-60 mr-1.5">{idx + 1}/{exercises.length}</span>
-                {ex.exercise_title}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+            {exercises.map((ex, idx) => {
+              const isActive = idx === activeIdx;
+              return (
+                <button
+                  key={ex.id}
+                  onClick={() => {
+                    setActiveIdx(idx);
+                    setExpandedStudentId(studentMode && roster.length === 1 ? roster[0].id : null);
+                  }}
+                  className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                    isActive
+                      ? 'bg-ink text-paper'
+                      : 'bg-paper text-ink-dim border border-ink-hair'
+                  }`}
+                >
+                  <span className="text-[10px] font-mono opacity-60 mr-1.5">{idx + 1}/{exercises.length}</span>
+                  {ex.exercise_title}
+                </button>
+              );
+            })}
+          </div>
+          {isCreator && !readOnly && (
+            <button
+              type="button"
+              onClick={() => setManageOpen(true)}
+              className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider text-ink-faint hover:text-crimson px-2 py-1.5 border border-ink-hair rounded"
+              aria-label="Manage exercises"
+            >
+              Manage
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,6 +209,17 @@ export function MobileWorkoutLogger({
             Next exercise →
           </button>
         </div>
+      )}
+
+      {/* Phase 18b: manage-exercises sheet (creators only) */}
+      {isCreator && (
+        <ManageExercisesPanel
+          open={manageOpen}
+          onClose={() => setManageOpen(false)}
+          activityId={workout.id}
+          exercises={exercises}
+          addableExercises={addableExercises}
+        />
       )}
     </>
   );

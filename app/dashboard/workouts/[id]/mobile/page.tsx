@@ -16,13 +16,14 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
   const supabase = createClient();
   const seasonCtx = await getSeasonContext();
 
-  // For students: resolve their own student record id (linked via students.profile_id)
+  // Phase 18b: resolve own student-row id for both student AND player roles.
+  // Used for self-only data filtering AND for the isCreator check below.
   let selfStudentId: string | null = null;
-  if (profile.role === 'student') {
+  if (profile.role === 'student' || profile.role === 'player') {
     const { data: selfRow } = await supabase
       .from('students').select('id').eq('profile_id', profile.id).maybeSingle();
     if (!selfRow) {
-      // Student has no linked student record yet — can't log workouts
+      // Has no linked athlete record yet — can't log workouts
       redirect('/dashboard');
     }
     selfStudentId = (selfRow as { id: string }).id;
@@ -38,9 +39,9 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
     .from('activity_students').select('student_id').eq('activity_id', workout.id);
   const rosterIds = ((rosterLinks ?? []) as Array<{ student_id: string }>).map((l) => l.student_id);
 
-  // Q10: students see only their own data, never other athletes'
-  // If student opens a workout they're not on, RLS prevents reads anyway, but fail loudly here too
-  if (profile.role === 'student') {
+  // Q10: students/players see only their own data, never other athletes'.
+  // If they open a workout they're not on, RLS prevents reads anyway, but fail loudly here too.
+  if (profile.role === 'student' || profile.role === 'player') {
     if (!selfStudentId || !rosterIds.includes(selfStudentId)) {
       redirect('/dashboard');
     }
@@ -54,8 +55,10 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
     rosterStudents = (sRows ?? []) as RosterStudent[];
   }
 
-  // For students, filter roster to themselves only
-  const studentMode = profile.role === 'student';
+  // For students AND players (Phase 18b), filter roster to themselves only.
+  // `studentMode` is the legacy name; "athlete in self-log mode" is the
+  // semantics — applies to both student and player roles.
+  const studentMode = profile.role === 'student' || profile.role === 'player';
   if (studentMode && selfStudentId) {
     rosterStudents = rosterStudents.filter((r) => r.id === selfStudentId);
   }
@@ -120,8 +123,29 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
     });
   }
 
-  // Empty-state shortcut: nothing to log if either the roster or the exercise list is empty
-  const hasContent = rosterStudents.length > 0 && resolvedExercises.length > 0;
+  // Phase 18b: detect "viewer created this" — gates the manage-exercises
+  // affordance and "Edit metadata" CTAs on the mobile logger.
+  const isCreator = workout.logged_by === profile.id;
+
+  // Phase 18b: only load the exercise library when the viewer is the creator
+  // (since only they see the manage panel). Avoids wasted query for trainers
+  // and athletes opening trainer-scheduled workouts.
+  let addableExercises: Array<{ id: string; name: string; category: string | null; body_part: string | null }> = [];
+  if (isCreator) {
+    const { data: exRows } = await supabase
+      .from('exercises')
+      .select('id, name, category, body_part')
+      .order('name')
+      .limit(500);
+    addableExercises = (exRows ?? []) as Array<{
+      id: string; name: string; category: string | null; body_part: string | null;
+    }>;
+  }
+
+  // Empty-state shortcut: nothing to log if either the roster or the exercise list is empty.
+  // Exception: a creator with zero exercises still sees the full logger so they can
+  // open the Manage panel and add their first exercise.
+  const hasContent = rosterStudents.length > 0 && (resolvedExercises.length > 0 || isCreator);
 
   // Exit destination differs by role: students don't have access to /dashboard/workouts/[id]
   // (the trainer-style desktop view), so they exit to their dashboard instead.
@@ -157,6 +181,8 @@ export default async function MobileWorkoutPage({ params }: { params: { id: stri
           locked={studentMode && !workout.released_at}
           studentMode={studentMode}
           canDeleteSets={!studentMode || isSoleAthlete}
+          isCreator={isCreator}
+          addableExercises={addableExercises}
         />
       )}
     </div>

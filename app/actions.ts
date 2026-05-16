@@ -3193,3 +3193,405 @@ export async function createPlayer(formData: FormData) {
   revalidatePath('/dashboard/players');
   return { ok: true, id: playerId };
 }
+
+// ============================================================================
+// Phase 18b: Self-create off-ice workouts
+//
+// Allows a Player (or self-logging Student) to create their own off-ice
+// workout, pick exercises from the library, and log sets.
+//
+// Design contract:
+//   - activities.logged_by = caller's profile id (this is the "I own this
+//     workout" predicate that satisfies the Phase 18a exclusion trigger and
+//     the Phase 14 activities-write policy)
+//   - activities.released_at = now() at creation time (Q3 = A auto-release,
+//     since there's no trainer to gate on)
+//   - One activity_students row linking the caller's own student row to the
+//     new activity
+//   - Optional: workout_exercises rows pre-populated from picked library
+//     exercises OR from a workout_plans template (Q1 = A library, Q2 = B
+//     allow template prefill)
+//
+// Defense in depth: every mutation re-verifies activity ownership server-
+// side, even though RLS would catch a bypass attempt.
+// ============================================================================
+
+/**
+ * Resolve the caller's own student record id (the one with profile_id =
+ * caller.id). Returns null if not linked (e.g. a parent who is not also a
+ * student/player would fail this check).
+ */
+async function _resolveSelfStudentId(supabase: ReturnType<typeof createClient>, profileId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('students').select('id').eq('profile_id', profileId).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Verify the activity exists, is an off-ice workout, and was created by the
+ * calling profile. Defense-in-depth complement to RLS — also surfaces a
+ * clear error message instead of a generic RLS denial.
+ */
+async function _assertOwnsSelfWorkout(
+  supabase: ReturnType<typeof createClient>,
+  activityId: string,
+  profileId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id, activity_type, logged_by')
+    .eq('id', activityId)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'Workout not found.' };
+  const a = data as { id: string; activity_type: string; logged_by: string | null };
+  if (a.activity_type !== 'off_ice_workout') {
+    return { ok: false, error: 'Not an off-ice workout.' };
+  }
+  if (a.logged_by !== profileId) {
+    return { ok: false, error: 'You can only edit workouts you created.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Create a new self-logged off-ice workout.
+ *
+ * Required form fields:
+ *   - occurred_on        YYYY-MM-DD (Q7 = A any date allowed)
+ * Optional:
+ *   - title              (Q8 = B defaults to "Workout · <date>" if missing)
+ *   - focus              short tagline
+ *   - notes              freeform
+ *   - off_ice_category   matches existing off_ice_category enum
+ *   - exercise_ids_json  JSON array of exercise UUIDs (from library picker)
+ *   - source_workout_plan_id  if set, copies plan_items into workout_exercises (Q2 = B)
+ *
+ * Allowed roles: student, player, plus staff (Q9 = B — Students can also
+ * self-create; staff included for convenience although they have the trainer
+ * flow too).
+ */
+export async function createSelfWorkout(formData: FormData): Promise<{
+  ok: boolean; id?: string; error?: string;
+}> {
+  const profile = await requireRole('student', 'player', 'admin', 'director', 'coach', 'trainer');
+  const supabase = createClient();
+
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const title_raw = String(formData.get('title') ?? '').trim();
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const off_ice_category = String(formData.get('off_ice_category') ?? '').trim() || null;
+  const source_workout_plan_id = String(formData.get('source_workout_plan_id') ?? '').trim() || null;
+  const exercise_ids_raw = String(formData.get('exercise_ids_json') ?? '').trim();
+
+  if (!occurred_on) return { ok: false, error: 'Date is required.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(occurred_on)) {
+    return { ok: false, error: 'Invalid date format.' };
+  }
+
+  // Resolve caller's own student row
+  const selfStudentId = await _resolveSelfStudentId(supabase, profile.id);
+  if (!selfStudentId) {
+    return { ok: false, error: "Your account isn't linked to an athlete record." };
+  }
+
+  // Sensible default title (Q8 = B)
+  const title = title_raw || `Workout \u00b7 ${occurred_on}`;
+
+  // Parse exercise_ids JSON (optional)
+  let pickedExerciseIds: string[] = [];
+  if (exercise_ids_raw) {
+    try {
+      const parsed = JSON.parse(exercise_ids_raw);
+      if (Array.isArray(parsed)) {
+        pickedExerciseIds = parsed
+          .filter((x): x is string => typeof x === 'string' && x.length > 0);
+      }
+    } catch {
+      return { ok: false, error: 'Invalid exercise selection.' };
+    }
+  }
+
+  // 1. Create the activity (auto-released per Q3 = A)
+  const { data: actRow, error: aErr } = await (supabase.from('activities') as Any)
+    .insert({
+      activity_type: 'off_ice_workout',
+      occurred_on,
+      title,
+      focus,
+      notes,
+      off_ice_category,
+      source_workout_plan_id,
+      logged_by: profile.id,
+      released_at: new Date().toISOString(),
+      released_by: profile.id,
+    })
+    .select('id').single();
+
+  if (aErr || !actRow) return { ok: false, error: aErr?.message ?? 'Could not create workout.' };
+  const activity_id = (actRow as { id: string }).id;
+
+  // 2. Link caller's own student row to the roster (Phase 18a trigger
+  //    permits this because logged_by = profile.id satisfies the
+  //    "creator's own workout" predicate)
+  const { error: rErr } = await (supabase.from('activity_students') as Any)
+    .insert({ activity_id, student_id: selfStudentId });
+  if (rErr) {
+    // Roll back the activity to avoid orphans
+    await (supabase.from('activities') as Any).delete().eq('id', activity_id);
+    return { ok: false, error: rErr.message };
+  }
+
+  // 3a. If a plan template was picked, copy its items as the starting
+  //     exercise list (Q2 = B)
+  let exerciseRows: Array<{ activity_id: string; exercise_id: string; sequence: number; sets: number | null; coach_notes: string | null }> = [];
+  if (source_workout_plan_id) {
+    const { data: planItems } = await supabase
+      .from('workout_plan_items')
+      .select('exercise_id, sequence, default_sets, coach_notes')
+      .eq('plan_id', source_workout_plan_id)
+      .order('sequence');
+    const items = (planItems ?? []) as Array<{
+      exercise_id: string; sequence: number;
+      default_sets: number | null; coach_notes: string | null;
+    }>;
+    exerciseRows = items.map((it) => ({
+      activity_id,
+      exercise_id: it.exercise_id,
+      sequence: it.sequence,
+      sets: it.default_sets,
+      coach_notes: it.coach_notes,
+    }));
+  }
+
+  // 3b. ALSO append any individually picked library exercises after the
+  //     template items. Sequence numbers continue from the highest already in
+  //     use so they don't collide. (Coach can pick a template AND add a few
+  //     custom exercises in the same create flow.)
+  if (pickedExerciseIds.length > 0) {
+    const startSeq = exerciseRows.length > 0
+      ? Math.max(...exerciseRows.map((r) => r.sequence)) + 1
+      : 0;
+    pickedExerciseIds.forEach((eid, idx) => {
+      exerciseRows.push({
+        activity_id,
+        exercise_id: eid,
+        sequence: startSeq + idx,
+        sets: null,
+        coach_notes: null,
+      });
+    });
+  }
+
+  if (exerciseRows.length > 0) {
+    await (supabase.from('workout_exercises') as Any).insert(exerciseRows);
+  }
+
+  revalidatePath('/dashboard/my-workouts');
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  return { ok: true, id: activity_id };
+}
+
+/**
+ * Append an exercise to an existing self-created workout. Sequence is
+ * placed at the end (max existing + 1, or 0 if empty).
+ *
+ * Required form fields:
+ *   - activity_id
+ *   - exercise_id
+ */
+export async function addSelfWorkoutExercise(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const exercise_id = String(formData.get('exercise_id') ?? '').trim();
+  if (!activity_id || !exercise_id) return { ok: false, error: 'Missing fields.' };
+
+  const own = await _assertOwnsSelfWorkout(supabase, activity_id, profile.id);
+  if (!own.ok) return own;
+
+  // Determine next sequence
+  const { data: lastRow } = await supabase
+    .from('workout_exercises')
+    .select('sequence')
+    .eq('activity_id', activity_id)
+    .order('sequence', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSeq = ((lastRow as { sequence: number } | null)?.sequence ?? -1) + 1;
+
+  const { error } = await (supabase.from('workout_exercises') as Any).insert({
+    activity_id,
+    exercise_id,
+    sequence: nextSeq,
+    sets: null,
+    coach_notes: null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  revalidatePath(`/dashboard/workouts/${activity_id}/mobile`);
+  return { ok: true };
+}
+
+/**
+ * Remove an exercise (and cascade its sets) from a self-created workout.
+ *
+ * Required form fields:
+ *   - activity_id
+ *   - workout_exercise_id
+ */
+export async function removeSelfWorkoutExercise(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const workout_exercise_id = String(formData.get('workout_exercise_id') ?? '').trim();
+  if (!activity_id || !workout_exercise_id) return { ok: false, error: 'Missing fields.' };
+
+  const own = await _assertOwnsSelfWorkout(supabase, activity_id, profile.id);
+  if (!own.ok) return own;
+
+  const { error } = await (supabase.from('workout_exercises') as Any)
+    .delete()
+    .eq('id', workout_exercise_id)
+    .eq('activity_id', activity_id);  // defense in depth
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  revalidatePath(`/dashboard/workouts/${activity_id}/mobile`);
+  return { ok: true };
+}
+
+/**
+ * Move an exercise up or down in the workout's sequence (Q11 = B).
+ *
+ * Required form fields:
+ *   - activity_id
+ *   - workout_exercise_id
+ *   - direction          'up' | 'down'
+ */
+export async function reorderSelfWorkoutExercise(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const workout_exercise_id = String(formData.get('workout_exercise_id') ?? '').trim();
+  const direction = String(formData.get('direction') ?? '').trim();
+  if (!activity_id || !workout_exercise_id) return { ok: false, error: 'Missing fields.' };
+  if (direction !== 'up' && direction !== 'down') return { ok: false, error: 'Invalid direction.' };
+
+  const own = await _assertOwnsSelfWorkout(supabase, activity_id, profile.id);
+  if (!own.ok) return own;
+
+  // Load full sequence to find neighbor
+  const { data: allRows } = await supabase
+    .from('workout_exercises')
+    .select('id, sequence')
+    .eq('activity_id', activity_id)
+    .order('sequence');
+  const rows = (allRows ?? []) as Array<{ id: string; sequence: number }>;
+  const idx = rows.findIndex((r) => r.id === workout_exercise_id);
+  if (idx === -1) return { ok: false, error: 'Exercise not in this workout.' };
+
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= rows.length) {
+    return { ok: true }; // Already at edge — no-op
+  }
+
+  const a = rows[idx];
+  const b = rows[swapIdx];
+
+  // Swap sequence values via a temporary out-of-band value to avoid unique
+  // index conflicts if one exists (we don't have one currently, but cheap
+  // insurance).
+  await (supabase.from('workout_exercises') as Any).update({ sequence: -1 }).eq('id', a.id);
+  await (supabase.from('workout_exercises') as Any).update({ sequence: a.sequence }).eq('id', b.id);
+  await (supabase.from('workout_exercises') as Any).update({ sequence: b.sequence }).eq('id', a.id);
+
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  revalidatePath(`/dashboard/workouts/${activity_id}/mobile`);
+  return { ok: true };
+}
+
+/**
+ * Delete a self-created workout. Cascades to activity_students,
+ * workout_exercises, and workout_exercise_sets via FK on-delete.
+ *
+ * Required form fields:
+ *   - activity_id
+ */
+export async function deleteSelfWorkout(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  if (!activity_id) return { ok: false, error: 'Missing activity id.' };
+
+  const own = await _assertOwnsSelfWorkout(supabase, activity_id, profile.id);
+  if (!own.ok) return own;
+
+  const { error } = await (supabase.from('activities') as Any).delete().eq('id', activity_id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/my-workouts');
+  return { ok: true };
+}
+
+/**
+ * Update metadata on a self-created workout (Q4 = A full edit).
+ *
+ * Required form fields:
+ *   - activity_id
+ *   - occurred_on        YYYY-MM-DD
+ * Optional:
+ *   - title, focus, notes, off_ice_category
+ */
+export async function updateSelfWorkoutMeta(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const profile = await requireProfile();
+  const supabase = createClient();
+
+  const activity_id = String(formData.get('activity_id') ?? '').trim();
+  const occurred_on = String(formData.get('occurred_on') ?? '').trim();
+  const title = String(formData.get('title') ?? '').trim();
+  const focus = String(formData.get('focus') ?? '').trim() || null;
+  const notes = String(formData.get('notes') ?? '').trim() || null;
+  const off_ice_category = String(formData.get('off_ice_category') ?? '').trim() || null;
+
+  if (!activity_id) return { ok: false, error: 'Missing activity id.' };
+  if (!occurred_on || !/^\d{4}-\d{2}-\d{2}$/.test(occurred_on)) {
+    return { ok: false, error: 'Invalid date.' };
+  }
+
+  const own = await _assertOwnsSelfWorkout(supabase, activity_id, profile.id);
+  if (!own.ok) return own;
+
+  const { error } = await (supabase.from('activities') as Any)
+    .update({
+      occurred_on,
+      title: title || `Workout \u00b7 ${occurred_on}`,
+      focus,
+      notes,
+      off_ice_category,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', activity_id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/my-workouts');
+  revalidatePath(`/dashboard/workouts/${activity_id}`);
+  revalidatePath(`/dashboard/workouts/${activity_id}/mobile`);
+  return { ok: true };
+}
