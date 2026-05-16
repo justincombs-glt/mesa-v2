@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { createInvite, revokeInvite } from '@/app/actions';
+import { createInvite, revokeInvite, resendInviteEmail } from '@/app/actions';
 import { toFormAction } from '@/lib/form-helpers';
 import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
@@ -51,27 +51,68 @@ export function InviteClient({ pending, students, addOnly }: Props) {
       ) : (
         <div className="card-base overflow-hidden">
           {pending.map((inv, idx) => (
-            <div key={inv.id} className={`flex items-center justify-between gap-4 px-5 py-4 ${idx > 0 ? 'border-t border-ink-hair' : ''}`}>
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-ink truncate">{inv.email}</div>
-                <div className="flex gap-2 text-xs text-ink-faint mt-0.5 flex-wrap items-center">
-                  <span>Invited as <span className="text-ink capitalize font-medium">{inv.role}</span></span>
-                  {inv.note && <span>· {inv.note}</span>}
-                </div>
-              </div>
-              <form action={toFormAction(revokeInvite)}>
-                <input type="hidden" name="id" value={inv.id} />
-                <button type="submit" className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider">
-                  Revoke
-                </button>
-              </form>
-            </div>
+            <PendingInviteRow key={inv.id} inv={inv} isFirst={idx === 0} />
           ))}
         </div>
       )}
 
       <InviteFormModal open={open} onClose={() => setOpen(false)} students={students} />
     </>
+  );
+}
+
+function PendingInviteRow({ inv, isFirst }: { inv: Invite; isFirst: boolean }) {
+  const [resending, setResending] = useState(false);
+  const [resendResult, setResendResult] = useState<'sent' | 'failed' | null>(null);
+
+  const handleResend = async () => {
+    setResending(true);
+    setResendResult(null);
+    const fd = new FormData();
+    fd.set('id', inv.id);
+    const res = await resendInviteEmail(fd);
+    setResending(false);
+    setResendResult(res.ok ? 'sent' : 'failed');
+    // Clear the status after a few seconds
+    setTimeout(() => setResendResult(null), 4000);
+  };
+
+  return (
+    <div className={`flex items-center justify-between gap-4 px-5 py-4 ${isFirst ? '' : 'border-t border-ink-hair'}`}>
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-ink truncate">{inv.email}</div>
+        <div className="flex gap-2 text-xs text-ink-faint mt-0.5 flex-wrap items-center">
+          <span>Invited as <span className="text-ink capitalize font-medium">{inv.role}</span></span>
+          {inv.note && <span>&middot; {inv.note}</span>}
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {resendResult === 'sent' && (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-sage-dark">
+            Sent
+          </span>
+        )}
+        {resendResult === 'failed' && (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-crimson">
+            Failed
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={resending}
+          className="text-xs text-ink-faint hover:text-ink font-mono uppercase tracking-wider disabled:opacity-50"
+        >
+          {resending ? 'Sending\u2026' : 'Resend'}
+        </button>
+        <form action={toFormAction(revokeInvite)}>
+          <input type="hidden" name="id" value={inv.id} />
+          <button type="submit" className="text-xs text-ink-faint hover:text-crimson font-mono uppercase tracking-wider">
+            Revoke
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 

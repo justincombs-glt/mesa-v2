@@ -100,7 +100,120 @@ export async function createInvite(formData: FormData) {
   });
 
   if (error) return { ok: false, error: error.message };
+
+  // Phase 8a: best-effort send invite email. We do NOT roll back the DB row
+  // on email failure — the invite still works manually (admin can share the
+  // sign-in URL out of band). The sendInviteEmail function logs internally;
+  // we capture the boolean here only so a future caller could decide whether
+  // to surface a soft warning.
+  await _sendInviteEmailForRow({
+    toEmail: email,
+    role,
+    invitedById: user.id,
+    note,
+    supabase,
+  });
+
   revalidatePath('/dashboard/users');
+  revalidatePath('/dashboard/invite');
+  return { ok: true };
+}
+
+/**
+ * Internal helper: looks up the inviter's display name + site URL, builds
+ * the invite email payload, and sends it. Returns true/false but the caller
+ * generally doesn't act on the result (best-effort fire-and-forget).
+ *
+ * Extracted so both createInvite and the future "Resend invite" UI button
+ * can share the same code path.
+ */
+async function _sendInviteEmailForRow(args: {
+  toEmail: string;
+  role: AppRole;
+  invitedById: string;
+  note: string | null;
+  supabase: ReturnType<typeof createClient>;
+}): Promise<boolean> {
+  // Resolve inviter's display name (best-effort; falls back to 'A MESA admin')
+  let invitedByName = 'A MESA admin';
+  const { data: inviterRow } = await args.supabase
+    .from('profiles').select('full_name, email').eq('id', args.invitedById).maybeSingle();
+  if (inviterRow) {
+    const i = inviterRow as { full_name: string | null; email: string };
+    invitedByName = i.full_name || i.email.split('@')[0] || 'A MESA admin';
+  }
+
+  // Resolve site URL. Preference order:
+  //   1. NEXT_PUBLIC_SITE_URL  (set this in Vercel for clean URLs)
+  //   2. VERCEL_URL            (auto-set per deploy, lacks protocol)
+  //   3. localhost fallback    (dev)
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+    'http://localhost:3000';
+
+  const { buildInviteEmail } = await import('@/lib/email/templates/invite');
+  const { sendEmail } = await import('@/lib/email/resend');
+  const payload = buildInviteEmail({
+    toEmail: args.toEmail,
+    role: args.role,
+    invitedByName,
+    siteUrl,
+    note: args.note,
+  });
+  return sendEmail({
+    to: args.toEmail,
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text,
+  });
+}
+
+/**
+ * Re-send the invite email for an existing pending invite row. Used by the
+ * "Resend" button on the pending invites list.
+ *
+ * Required form fields:
+ *   - id (invite id)
+ */
+export async function resendInviteEmail(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/sign-in');
+
+  // Must be admin/director to resend invites — same gate as the invite page
+  const { data: meRow } = await supabase
+    .from('profiles').select('role').eq('id', user.id).maybeSingle();
+  const myRole = (meRow as { role: AppRole } | null)?.role;
+  if (myRole !== 'admin' && myRole !== 'director') {
+    return { ok: false, error: 'Only admins and directors can resend invites.' };
+  }
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing invite id.' };
+
+  const { data: inviteRow } = await supabase
+    .from('invites').select('email, role, note, invited_by, status').eq('id', id).maybeSingle();
+  if (!inviteRow) return { ok: false, error: 'Invite not found.' };
+  const inv = inviteRow as { email: string; role: AppRole; note: string | null; invited_by: string | null; status: string };
+  if (inv.status !== 'pending') {
+    return { ok: false, error: `Cannot resend: invite is ${inv.status}.` };
+  }
+
+  const sent = await _sendInviteEmailForRow({
+    toEmail: inv.email,
+    role: inv.role,
+    invitedById: inv.invited_by ?? user.id,
+    note: inv.note,
+    supabase,
+  });
+
+  if (!sent) {
+    return { ok: false, error: 'Email failed to send. Check server logs.' };
+  }
+
   revalidatePath('/dashboard/invite');
   return { ok: true };
 }

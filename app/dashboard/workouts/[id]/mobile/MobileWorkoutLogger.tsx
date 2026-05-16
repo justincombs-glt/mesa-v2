@@ -39,8 +39,9 @@ interface Props {
    */
   addableExercises?: Array<{
     id: string;
-    title: string;
+    name: string;
     category: string | null;
+    body_part: string | null;
   }>;
 }
 
