@@ -27,6 +27,8 @@ import { buildDigestEmail } from '@/lib/email/templates/digest';
 import { sendEmail } from '@/lib/email/resend';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 // Increase timeout for big jobs — Vercel hobby allows up to 60s on cron endpoints
 export const maxDuration = 60;
 
@@ -183,7 +185,12 @@ export async function GET(req: NextRequest) {
     results,
   };
 
-  return NextResponse.json(summary);
+  return NextResponse.json(summary, {
+    headers: {
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      'Pragma': 'no-cache',
+    },
+  });
 }
 
 // ----------------------------------------------------------------------------
