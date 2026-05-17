@@ -30,7 +30,7 @@ export function buildDigestEmail(params: DigestEmailParams): {
 
   const rangeLabel = `${_fmtDate(content.range_start)} \u2013 ${_fmtDate(content.range_end)}`;
   const upcomingLabel = `${_fmtDate(_addDays(content.range_end, 1))} \u2013 ${_fmtDate(content.upcoming_end)}`;
-  const subject = `MESA weekly digest \u00b7 ${_fmtDate(content.range_end)}`;
+  const subject = `Michigan Elite Sports Academy weekly digest \u00b7 ${_fmtDate(content.range_end)}`;
 
   // ----- Plain text body -----
   const lines: string[] = [];
@@ -82,7 +82,10 @@ export function buildDigestEmail(params: DigestEmailParams): {
     if (a.upcoming.practices.length > 0) {
       upBits.push(`- Practices:`);
       for (const p of a.upcoming.practices) {
-        upBits.push(`    ${_fmtDate(p.date)}${p.time ? ` @ ${p.time}` : ''}${p.title ? ` \u2014 ${p.title}` : ''}`);
+        upBits.push(`    ${_fmtDate(p.date)}${p.time ? ` @ ${p.time}` : ''}`);
+        if (p.title) {
+          upBits.push(`    ${p.title}`);
+        }
         for (const d of p.drills) {
           const dur = d.duration_minutes ? ` (${d.duration_minutes} min)` : '';
           upBits.push(`        \u2022 ${d.title}${dur}`);
@@ -125,10 +128,10 @@ export function buildDigestEmail(params: DigestEmailParams): {
           <!-- Header -->
           <tr>
             <td style="padding:32px 40px 16px 40px; border-bottom:1px solid #e5e5dd;">
-              <div style="font-family: Georgia, 'Times New Roman', serif; font-size:24px; font-weight:600; letter-spacing:-0.01em;">
-                MESA
+              <div style="font-family: Georgia, 'Times New Roman', serif; font-size:22px; font-weight:600; letter-spacing:-0.01em; line-height:1.2;">
+                Michigan Elite Sports Academy
               </div>
-              <div style="font-size:11px; color:#7a7a7a; text-transform:uppercase; letter-spacing:0.1em; margin-top:4px;">
+              <div style="font-size:11px; color:#7a7a7a; text-transform:uppercase; letter-spacing:0.1em; margin-top:6px;">
                 Weekly digest \u00b7 ${_escapeHtml(_fmtDate(content.range_end))}
               </div>
             </td>
@@ -224,15 +227,20 @@ function _renderAthleteHtml(a: import('@/lib/email/digest').AthleteDigest, range
 
   if (up.practices.length > 0) {
     const rows = up.practices.map((p) => {
-      const header = `${_escapeHtml(_fmtDate(p.date))}${p.time ? ` @ ${_escapeHtml(p.time)}` : ''}${p.title ? ` \u2014 ${_escapeHtml(p.title)}` : ''}`;
+      // Per design: date+time on one line, practice title bold on the next.
+      const dateLine = `${_escapeHtml(_fmtDate(p.date))}${p.time ? ` @ ${_escapeHtml(p.time)}` : ''}`;
+      const titleLine = p.title
+        ? `<div style="font-weight:600; color:#0b1a2f; margin-top:2px;">${_escapeHtml(p.title)}</div>`
+        : '';
+      const header = `<div>${dateLine}</div>${titleLine}`;
       if (p.drills.length === 0) {
-        return `<li>${header}</li>`;
+        return `<li style="margin-bottom:10px;">${header}</li>`;
       }
       const drillRows = p.drills.map((d) => {
         const dur = d.duration_minutes ? ` <span style="color:#7a7a7a;">(${d.duration_minutes} min)</span>` : '';
         return `<li>${_escapeHtml(d.title)}${dur}</li>`;
       }).join('');
-      return `<li>${header}<ul style="margin:4px 0 0 0; padding-left:18px; font-size:13px; color:#5a5a5a;">${drillRows}</ul></li>`;
+      return `<li style="margin-bottom:10px;">${header}<ul style="margin:6px 0 0 0; padding-left:18px; font-size:13px; color:#5a5a5a;">${drillRows}</ul></li>`;
     }).join('');
     upItems.push(
       `<li><strong>Practices</strong><ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
