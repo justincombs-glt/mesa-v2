@@ -45,18 +45,26 @@ export interface AthleteDigest {
   student_id: string;
   student_name: string;
   past: {
-    workouts_logged: number;
-    practices_attended: number;
-    games_played: Array<{ date: string; opponent: string | null; our: number | null; opp: number | null }>;
-    goal_updates: Array<{ title: string }>;
-    apa_results_count: number;
-    game_review_notes_count: number;
+    /** Workouts the athlete actually logged sets for (per-workout detail). */
+    workouts_logged: Array<{ date: string; title: string | null }>;
+    /** Practices the athlete was rostered into AND marked present for. */
+    practices_attended: Array<{ date: string; title: string | null }>;
+    /** Games the coach marked as reviewed (any reviewed_at in the range). */
+    games_reviewed: Array<{
+      date: string;
+      opponent: string | null;
+      our: number | null;
+      opp: number | null;
+    }>;
   };
   upcoming: {
-    practices: Array<{ date: string; time: string | null; title: string | null }>;
-    games: Array<{ date: string; opponent: string | null; home_away: 'home' | 'away' | null }>;
+    practices: Array<{
+      date: string;
+      time: string | null;
+      title: string | null;
+      drills: Array<{ title: string; duration_minutes: number | null }>;
+    }>;
     workouts_released: Array<{ date: string; title: string | null }>;
-    active_goals: Array<{ title: string }>;
   };
 }
 
@@ -114,19 +122,14 @@ export async function buildDigestForProfile(
     athleteDigests.push(ad);
   }
 
-  // Q6 empty check
+  // Q6 empty check — skip the email if all sections are empty for all athletes.
   const anyContent = athleteDigests.some(
     (ad) =>
-      ad.past.workouts_logged > 0 ||
-      ad.past.practices_attended > 0 ||
-      ad.past.games_played.length > 0 ||
-      ad.past.goal_updates.length > 0 ||
-      ad.past.apa_results_count > 0 ||
-      ad.past.game_review_notes_count > 0 ||
+      ad.past.workouts_logged.length > 0 ||
+      ad.past.practices_attended.length > 0 ||
+      ad.past.games_reviewed.length > 0 ||
       ad.upcoming.practices.length > 0 ||
-      ad.upcoming.games.length > 0 ||
-      ad.upcoming.workouts_released.length > 0 ||
-      ad.upcoming.active_goals.length > 0,
+      ad.upcoming.workouts_released.length > 0,
   );
   if (!anyContent) return null;
 
@@ -188,6 +191,26 @@ async function _resolveAthletesForProfile(
 
 /**
  * Build the per-athlete digest content. All queries scoped to this one student.
+ *
+ * Shape (per current design):
+ *   PAST week
+ *     - workouts_logged: list (date + title) — only workouts where this athlete
+ *       actually logged at least one set in the range
+ *     - practices_attended: list (date + title) — only practices where the
+ *       attendance row shows attended = TRUE for this athlete in the range
+ *     - games_reviewed: list (date + opponent + score) — games with
+ *       reviewed_at falling in the range; this REPLACES "games played"
+ *
+ *   UPCOMING week
+ *     - practices: list with header (date + time + title) + drills sub-list
+ *     - workouts_released: list (date + title) — released workouts on
+ *       this athlete's roster in the upcoming window
+ *
+ * Intentionally omitted (deferred to a future review feature):
+ *   - goal updates / active goals
+ *   - APA results
+ *   - games played (only "reviewed" games appear, in past section)
+ *   - upcoming games
  */
 async function _buildAthleteDigest(
   supabase: AnySupabaseClient,
@@ -196,169 +219,186 @@ async function _buildAthleteDigest(
   rangeEnd: string,
   upcomingEnd: string,
 ): Promise<AthleteDigest> {
-  // Today's date (used as the boundary for past vs upcoming activities)
   const today = new Date().toISOString().slice(0, 10);
 
-  // Find all activity_ids this athlete is rostered into within the relevant range
+  // Roster — every activity this athlete is on
   const { data: rosterRows } = await supabase
     .from('activity_students')
     .select('activity_id')
     .eq('student_id', athlete.id);
   const activityIds = ((rosterRows ?? []) as Array<{ activity_id: string }>).map((r) => r.activity_id);
 
-  // Past + upcoming activities
-  let pastWorkoutsCount = 0;
-  let pastPracticesCount = 0;
-  const pastGames: AthleteDigest['past']['games_played'] = [];
+  const workoutsLogged: AthleteDigest['past']['workouts_logged'] = [];
+  const practicesAttended: AthleteDigest['past']['practices_attended'] = [];
+  const gamesReviewed: AthleteDigest['past']['games_reviewed'] = [];
   const upcomingPractices: AthleteDigest['upcoming']['practices'] = [];
-  const upcomingGames: AthleteDigest['upcoming']['games'] = [];
   const upcomingWorkoutsReleased: AthleteDigest['upcoming']['workouts_released'] = [];
-  let pastGameReviewCount = 0;
 
   if (activityIds.length > 0) {
     const { data: acts } = await supabase
       .from('activities')
-      .select('id, activity_type, occurred_on, starts_at, title, opponent, our_score, opp_score, home_away, released_at, reviewed_at, updated_at')
+      .select('id, activity_type, occurred_on, starts_at, title, opponent, our_score, opp_score, released_at, reviewed_at, source_practice_plan_id')
       .in('id', activityIds)
       .gte('occurred_on', rangeStart)
       .lte('occurred_on', upcomingEnd);
     const acts2 = (acts ?? []) as Array<{
-      id: string; activity_type: string; occurred_on: string; starts_at: string | null;
-      title: string | null; opponent: string | null; our_score: number | null;
-      opp_score: number | null; home_away: 'home' | 'away' | null;
-      released_at: string | null; reviewed_at: string | null; updated_at: string;
+      id: string;
+      activity_type: string;
+      occurred_on: string;
+      starts_at: string | null;
+      title: string | null;
+      opponent: string | null;
+      our_score: number | null;
+      opp_score: number | null;
+      released_at: string | null;
+      reviewed_at: string | null;
+      source_practice_plan_id: string | null;
     }>;
 
-    for (const act of acts2) {
-      const isPast = act.occurred_on >= rangeStart && act.occurred_on <= rangeEnd;
-      const isUpcoming = act.occurred_on > today && act.occurred_on <= upcomingEnd;
-
-      if (act.activity_type === 'off_ice_workout') {
-        if (isPast) {
-          // Count past workouts only if athlete actually logged sets — proxy:
-          // check workout_exercise_sets. For perf we batch this below.
-          pastWorkoutsCount += 1; // adjusted below
-        } else if (isUpcoming && act.released_at) {
-          upcomingWorkoutsReleased.push({
-            date: act.occurred_on,
-            title: act.title,
-          });
-        }
-      } else if (act.activity_type === 'practice') {
-        if (isPast) pastPracticesCount += 1;
-        else if (isUpcoming) {
-          upcomingPractices.push({
-            date: act.occurred_on,
-            time: act.starts_at?.slice(0, 5) ?? null,
-            title: act.title,
-          });
-        }
-      } else if (act.activity_type === 'game') {
-        if (isPast) {
-          pastGames.push({
-            date: act.occurred_on,
-            opponent: act.opponent,
-            our: act.our_score,
-            opp: act.opp_score,
-          });
-          // Count game-review notes added in range (proxy: reviewed_at falls in range)
-          if (act.reviewed_at && act.reviewed_at.slice(0, 10) >= rangeStart && act.reviewed_at.slice(0, 10) <= rangeEnd) {
-            pastGameReviewCount += 1;
-          }
-        } else if (isUpcoming) {
-          upcomingGames.push({
-            date: act.occurred_on,
-            opponent: act.opponent,
-            home_away: act.home_away,
-          });
-        }
-      }
-    }
-
-    // Refine pastWorkoutsCount: only count workouts where this athlete actually
-    // logged at least one set within the range. Replace the naive count.
-    const pastWorkoutIds = acts2
-      .filter((a) => a.activity_type === 'off_ice_workout' && a.occurred_on >= rangeStart && a.occurred_on <= rangeEnd)
-      .map((a) => a.id);
-    if (pastWorkoutIds.length > 0) {
+    // ----- Past: workouts logged (only ones with actual set entries) -----
+    const pastWorkoutActs = acts2.filter(
+      (a) => a.activity_type === 'off_ice_workout'
+        && a.occurred_on >= rangeStart
+        && a.occurred_on <= rangeEnd,
+    );
+    if (pastWorkoutActs.length > 0) {
       const { data: weRows } = await supabase
         .from('workout_exercises').select('id, activity_id')
-        .in('activity_id', pastWorkoutIds);
+        .in('activity_id', pastWorkoutActs.map((a) => a.id));
       const weList = ((weRows ?? []) as Array<{ id: string; activity_id: string }>);
+      const loggedActivityIds = new Set<string>();
       if (weList.length > 0) {
         const { data: setRows } = await supabase
           .from('workout_exercise_sets').select('workout_exercise_id')
           .eq('student_id', athlete.id)
           .in('workout_exercise_id', weList.map((w) => w.id));
-        // Workouts where the athlete logged at least one set
-        const loggedActivityIds = new Set<string>();
         const weToActivity = new Map(weList.map((we) => [we.id, we.activity_id]));
         ((setRows ?? []) as Array<{ workout_exercise_id: string }>).forEach((s) => {
           const aid = weToActivity.get(s.workout_exercise_id);
           if (aid) loggedActivityIds.add(aid);
         });
-        pastWorkoutsCount = loggedActivityIds.size;
-      } else {
-        pastWorkoutsCount = 0;
       }
-    } else {
-      pastWorkoutsCount = 0;
+      for (const a of pastWorkoutActs) {
+        if (loggedActivityIds.has(a.id)) {
+          workoutsLogged.push({ date: a.occurred_on, title: a.title });
+        }
+      }
+    }
+
+    // ----- Past: practices attended (per attendance.attended = TRUE) -----
+    const pastPracticeActs = acts2.filter(
+      (a) => a.activity_type === 'practice'
+        && a.occurred_on >= rangeStart
+        && a.occurred_on <= rangeEnd,
+    );
+    if (pastPracticeActs.length > 0) {
+      const { data: attRows } = await supabase
+        .from('attendance')
+        .select('activity_id, attended')
+        .eq('student_id', athlete.id)
+        .in('activity_id', pastPracticeActs.map((a) => a.id));
+      const attMap = new Map<string, boolean | null>();
+      for (const r of ((attRows ?? []) as Array<{ activity_id: string; attended: boolean | null }>)) {
+        attMap.set(r.activity_id, r.attended);
+      }
+      for (const a of pastPracticeActs) {
+        if (attMap.get(a.id) === true) {
+          practicesAttended.push({ date: a.occurred_on, title: a.title });
+        }
+      }
+    }
+
+    // ----- Past: games reviewed (reviewed_at falls in range) -----
+    for (const a of acts2) {
+      if (a.activity_type !== 'game') continue;
+      if (!a.reviewed_at) continue;
+      const reviewedDate = a.reviewed_at.slice(0, 10);
+      if (reviewedDate >= rangeStart && reviewedDate <= rangeEnd) {
+        gamesReviewed.push({
+          date: a.occurred_on,
+          opponent: a.opponent,
+          our: a.our_score,
+          opp: a.opp_score,
+        });
+      }
+    }
+
+    // ----- Upcoming: practices with drills -----
+    const upcomingPracticeActs = acts2.filter(
+      (a) => a.activity_type === 'practice'
+        && a.occurred_on > today
+        && a.occurred_on <= upcomingEnd,
+    );
+    if (upcomingPracticeActs.length > 0) {
+      // Batch-load drill lists for all upcoming practices' source plans
+      const planIds = upcomingPracticeActs
+        .map((a) => a.source_practice_plan_id)
+        .filter((id): id is string => id !== null);
+      const drillsByPlan = new Map<string, Array<{ title: string; duration_minutes: number | null }>>();
+      if (planIds.length > 0) {
+        const { data: itemRows } = await supabase
+          .from('practice_plan_items')
+          .select('plan_id, sequence, item_type, drill_id, skill_title, duration_override, drills(title, duration_minutes)')
+          .in('plan_id', planIds)
+          .order('sequence');
+        for (const it of ((itemRows ?? []) as Array<{
+          plan_id: string;
+          sequence: number;
+          item_type: string;
+          drill_id: string | null;
+          skill_title: string | null;
+          duration_override: number | null;
+          drills: { title: string | null; duration_minutes: number | null } | null;
+        }>)) {
+          const arr = drillsByPlan.get(it.plan_id) ?? [];
+          const title = it.item_type === 'drill'
+            ? (it.drills?.title ?? '(unknown drill)')
+            : (it.skill_title ?? '(unnamed item)');
+          const duration = it.duration_override ?? it.drills?.duration_minutes ?? null;
+          arr.push({ title, duration_minutes: duration });
+          drillsByPlan.set(it.plan_id, arr);
+        }
+      }
+      for (const p of upcomingPracticeActs) {
+        upcomingPractices.push({
+          date: p.occurred_on,
+          time: p.starts_at?.slice(0, 5) ?? null,
+          title: p.title,
+          drills: p.source_practice_plan_id
+            ? (drillsByPlan.get(p.source_practice_plan_id) ?? [])
+            : [],
+        });
+      }
+    }
+
+    // ----- Upcoming: workouts released -----
+    for (const a of acts2) {
+      if (a.activity_type !== 'off_ice_workout') continue;
+      if (!a.released_at) continue;
+      if (a.occurred_on > today && a.occurred_on <= upcomingEnd) {
+        upcomingWorkoutsReleased.push({ date: a.occurred_on, title: a.title });
+      }
     }
   }
 
-  // Goal updates in the past range
-  const goalUpdates: AthleteDigest['past']['goal_updates'] = [];
-  const { data: goalPlans } = await supabase
-    .from('goal_plans')
-    .select('id, title, updated_at, status')
-    .eq('student_id', athlete.id);
-  const plans = ((goalPlans ?? []) as Array<{ id: string; title: string; updated_at: string; status: string }>);
-  for (const p of plans) {
-    if (p.updated_at.slice(0, 10) >= rangeStart && p.updated_at.slice(0, 10) <= rangeEnd) {
-      goalUpdates.push({ title: p.title });
-    }
-  }
-
-  // Active goals for upcoming section
-  const activeGoals: AthleteDigest['upcoming']['active_goals'] = plans
-    .filter((p) => p.status === 'active')
-    .map((p) => ({ title: p.title }))
-    .slice(0, 5);
-
-  // APA / performance test results recorded in range
-  let apaResultsCount = 0;
-  const { data: apaRows } = await supabase
-    .from('performance_test_results')
-    .select('id, recorded_at')
-    .eq('student_id', athlete.id);
-  const apaList = ((apaRows ?? []) as Array<{ recorded_at: string }>);
-  for (const r of apaList) {
-    if (r.recorded_at.slice(0, 10) >= rangeStart && r.recorded_at.slice(0, 10) <= rangeEnd) {
-      apaResultsCount += 1;
-    }
-  }
-
-  // Sort upcoming sections by date
+  // Sort by date for consistent presentation
+  workoutsLogged.sort((a, b) => a.date.localeCompare(b.date));
+  practicesAttended.sort((a, b) => a.date.localeCompare(b.date));
+  gamesReviewed.sort((a, b) => a.date.localeCompare(b.date));
   upcomingPractices.sort((a, b) => a.date.localeCompare(b.date));
-  upcomingGames.sort((a, b) => a.date.localeCompare(b.date));
   upcomingWorkoutsReleased.sort((a, b) => a.date.localeCompare(b.date));
 
   return {
     student_id: athlete.id,
     student_name: athlete.full_name,
     past: {
-      workouts_logged: pastWorkoutsCount,
-      practices_attended: pastPracticesCount,
-      games_played: pastGames,
-      goal_updates: goalUpdates,
-      apa_results_count: apaResultsCount,
-      game_review_notes_count: pastGameReviewCount,
+      workouts_logged: workoutsLogged,
+      practices_attended: practicesAttended,
+      games_reviewed: gamesReviewed,
     },
     upcoming: {
       practices: upcomingPractices,
-      games: upcomingGames,
       workouts_released: upcomingWorkoutsReleased,
-      active_goals: activeGoals,
     },
   };
 }

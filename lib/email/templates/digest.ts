@@ -45,48 +45,58 @@ export function buildDigestEmail(params: DigestEmailParams): {
     lines.push('=================================================');
     lines.push('');
 
-    // Past
+    // ----- Past -----
     lines.push(`PAST WEEK (${rangeLabel}):`);
     const pastBits: string[] = [];
-    if (a.past.workouts_logged > 0) pastBits.push(`- ${a.past.workouts_logged} workout${a.past.workouts_logged === 1 ? '' : 's'} logged`);
-    if (a.past.practices_attended > 0) pastBits.push(`- ${a.past.practices_attended} practice${a.past.practices_attended === 1 ? '' : 's'} on the schedule`);
-    if (a.past.games_played.length > 0) {
-      pastBits.push(`- ${a.past.games_played.length} game${a.past.games_played.length === 1 ? '' : 's'}:`);
-      for (const g of a.past.games_played) {
+
+    if (a.past.workouts_logged.length > 0) {
+      pastBits.push(`- Workouts logged (${a.past.workouts_logged.length}):`);
+      for (const w of a.past.workouts_logged) {
+        pastBits.push(`    ${_fmtDate(w.date)}${w.title ? ` \u2014 ${w.title}` : ''}`);
+      }
+    }
+
+    if (a.past.practices_attended.length > 0) {
+      pastBits.push(`- Practices attended (${a.past.practices_attended.length}):`);
+      for (const p of a.past.practices_attended) {
+        pastBits.push(`    ${_fmtDate(p.date)}${p.title ? ` \u2014 ${p.title}` : ''}`);
+      }
+    }
+
+    if (a.past.games_reviewed.length > 0) {
+      pastBits.push(`- Coach-reviewed games (${a.past.games_reviewed.length}):`);
+      for (const g of a.past.games_reviewed) {
         const score = (g.our !== null && g.opp !== null) ? ` (${g.our}-${g.opp})` : '';
         pastBits.push(`    ${_fmtDate(g.date)} vs ${g.opponent ?? 'TBD'}${score}`);
       }
     }
-    if (a.past.goal_updates.length > 0) {
-      pastBits.push(`- ${a.past.goal_updates.length} goal update${a.past.goal_updates.length === 1 ? '' : 's'}`);
-    }
-    if (a.past.apa_results_count > 0) pastBits.push(`- ${a.past.apa_results_count} APA result${a.past.apa_results_count === 1 ? '' : 's'} recorded`);
-    if (a.past.game_review_notes_count > 0) pastBits.push(`- Coach added review notes on ${a.past.game_review_notes_count} game${a.past.game_review_notes_count === 1 ? '' : 's'}`);
+
     if (pastBits.length === 0) pastBits.push('  (quiet week)');
     lines.push(...pastBits);
     lines.push('');
 
-    // Upcoming
+    // ----- Upcoming -----
     lines.push(`COMING UP (${upcomingLabel}):`);
     const upBits: string[] = [];
+
     if (a.upcoming.practices.length > 0) {
       upBits.push(`- Practices:`);
       for (const p of a.upcoming.practices) {
         upBits.push(`    ${_fmtDate(p.date)}${p.time ? ` @ ${p.time}` : ''}${p.title ? ` \u2014 ${p.title}` : ''}`);
+        for (const d of p.drills) {
+          const dur = d.duration_minutes ? ` (${d.duration_minutes} min)` : '';
+          upBits.push(`        \u2022 ${d.title}${dur}`);
+        }
       }
     }
-    if (a.upcoming.games.length > 0) {
-      upBits.push(`- Games:`);
-      for (const g of a.upcoming.games) {
-        upBits.push(`    ${_fmtDate(g.date)} ${g.home_away ? `(${g.home_away})` : ''} vs ${g.opponent ?? 'TBD'}`);
-      }
-    }
+
     if (a.upcoming.workouts_released.length > 0) {
-      upBits.push(`- Workouts ready to log: ${a.upcoming.workouts_released.length}`);
+      upBits.push(`- Workouts ready to log:`);
+      for (const w of a.upcoming.workouts_released) {
+        upBits.push(`    ${_fmtDate(w.date)}${w.title ? ` \u2014 ${w.title}` : ''}`);
+      }
     }
-    if (a.upcoming.active_goals.length > 0) {
-      upBits.push(`- Active goals: ${a.upcoming.active_goals.map((g) => g.title).join('; ')}`);
-    }
+
     if (upBits.length === 0) upBits.push('  (nothing on the calendar)');
     lines.push(...upBits);
     lines.push('');
@@ -173,38 +183,70 @@ function _renderAthleteHtml(a: import('@/lib/email/digest').AthleteDigest, range
   const past = a.past;
   const up = a.upcoming;
 
+  // ---- Past section items ----
   const pastItems: string[] = [];
-  if (past.workouts_logged > 0) pastItems.push(`<li><strong>${past.workouts_logged}</strong> workout${past.workouts_logged === 1 ? '' : 's'} logged</li>`);
-  if (past.practices_attended > 0) pastItems.push(`<li><strong>${past.practices_attended}</strong> practice${past.practices_attended === 1 ? '' : 's'} on the schedule</li>`);
-  if (past.games_played.length > 0) {
-    const gameRows = past.games_played.map((g) => {
-      const score = (g.our !== null && g.opp !== null) ? ` <span style="color:#7a7a7a;">(${g.our}\u2013${g.opp})</span>` : '';
+
+  if (past.workouts_logged.length > 0) {
+    const rows = past.workouts_logged.map((w) =>
+      `<li>${_escapeHtml(_fmtDate(w.date))}${w.title ? ` \u2014 ${_escapeHtml(w.title)}` : ''}</li>`,
+    ).join('');
+    pastItems.push(
+      `<li><strong>Workouts logged (${past.workouts_logged.length})</strong>` +
+      `<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
+    );
+  }
+
+  if (past.practices_attended.length > 0) {
+    const rows = past.practices_attended.map((p) =>
+      `<li>${_escapeHtml(_fmtDate(p.date))}${p.title ? ` \u2014 ${_escapeHtml(p.title)}` : ''}</li>`,
+    ).join('');
+    pastItems.push(
+      `<li><strong>Practices attended (${past.practices_attended.length})</strong>` +
+      `<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
+    );
+  }
+
+  if (past.games_reviewed.length > 0) {
+    const rows = past.games_reviewed.map((g) => {
+      const score = (g.our !== null && g.opp !== null)
+        ? ` <span style="color:#7a7a7a;">(${g.our}\u2013${g.opp})</span>`
+        : '';
       return `<li>${_escapeHtml(_fmtDate(g.date))} vs ${_escapeHtml(g.opponent ?? 'TBD')}${score}</li>`;
     }).join('');
-    pastItems.push(`<li><strong>${past.games_played.length}</strong> game${past.games_played.length === 1 ? '' : 's'}<ul style="margin:6px 0 0 0; padding-left:18px;">${gameRows}</ul></li>`);
+    pastItems.push(
+      `<li><strong>Coach-reviewed games (${past.games_reviewed.length})</strong>` +
+      `<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
+    );
   }
-  if (past.goal_updates.length > 0) pastItems.push(`<li>${past.goal_updates.length} goal update${past.goal_updates.length === 1 ? '' : 's'}</li>`);
-  if (past.apa_results_count > 0) pastItems.push(`<li>${past.apa_results_count} APA result${past.apa_results_count === 1 ? '' : 's'} recorded</li>`);
-  if (past.game_review_notes_count > 0) pastItems.push(`<li>Coach added review notes on ${past.game_review_notes_count} game${past.game_review_notes_count === 1 ? '' : 's'}</li>`);
 
+  // ---- Upcoming section items ----
   const upItems: string[] = [];
+
   if (up.practices.length > 0) {
-    const rows = up.practices.map((p) =>
-      `<li>${_escapeHtml(_fmtDate(p.date))}${p.time ? ` @ ${_escapeHtml(p.time)}` : ''}${p.title ? ` \u2014 ${_escapeHtml(p.title)}` : ''}</li>`,
-    ).join('');
-    upItems.push(`<li>Practices<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`);
+    const rows = up.practices.map((p) => {
+      const header = `${_escapeHtml(_fmtDate(p.date))}${p.time ? ` @ ${_escapeHtml(p.time)}` : ''}${p.title ? ` \u2014 ${_escapeHtml(p.title)}` : ''}`;
+      if (p.drills.length === 0) {
+        return `<li>${header}</li>`;
+      }
+      const drillRows = p.drills.map((d) => {
+        const dur = d.duration_minutes ? ` <span style="color:#7a7a7a;">(${d.duration_minutes} min)</span>` : '';
+        return `<li>${_escapeHtml(d.title)}${dur}</li>`;
+      }).join('');
+      return `<li>${header}<ul style="margin:4px 0 0 0; padding-left:18px; font-size:13px; color:#5a5a5a;">${drillRows}</ul></li>`;
+    }).join('');
+    upItems.push(
+      `<li><strong>Practices</strong><ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
+    );
   }
-  if (up.games.length > 0) {
-    const rows = up.games.map((g) =>
-      `<li>${_escapeHtml(_fmtDate(g.date))} ${g.home_away ? `(${g.home_away})` : ''} vs ${_escapeHtml(g.opponent ?? 'TBD')}</li>`,
-    ).join('');
-    upItems.push(`<li>Games<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`);
-  }
+
   if (up.workouts_released.length > 0) {
-    upItems.push(`<li><strong>${up.workouts_released.length}</strong> workout${up.workouts_released.length === 1 ? '' : 's'} ready to log</li>`);
-  }
-  if (up.active_goals.length > 0) {
-    upItems.push(`<li>Active goals: ${up.active_goals.map((g) => _escapeHtml(g.title)).join(', ')}</li>`);
+    const rows = up.workouts_released.map((w) =>
+      `<li>${_escapeHtml(_fmtDate(w.date))}${w.title ? ` \u2014 ${_escapeHtml(w.title)}` : ''}</li>`,
+    ).join('');
+    upItems.push(
+      `<li><strong>Workouts ready to log (${up.workouts_released.length})</strong>` +
+      `<ul style="margin:6px 0 0 0; padding-left:18px;">${rows}</ul></li>`,
+    );
   }
 
   return `
