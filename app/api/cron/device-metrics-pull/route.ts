@@ -104,14 +104,23 @@ export async function GET(req: NextRequest) {
 
   for (const { activity, window } of eligibleActs) {
     // Find rostered athletes
+    // Note: Supabase types the joined `students` relationship as an array even
+    // when it's a one-to-one, so we accept both shapes and normalize below.
     const { data: rosterRows } = await supabase
       .from('activity_students')
       .select('student_id, students(id, profile_id)')
       .eq('activity_id', activity.id);
-    const roster = ((rosterRows ?? []) as Array<{
+    const rosterRaw = ((rosterRows ?? []) as unknown) as Array<{
       student_id: string;
-      students: { id: string; profile_id: string | null } | null;
-    }>);
+      students:
+        | { id: string; profile_id: string | null }
+        | Array<{ id: string; profile_id: string | null }>
+        | null;
+    }>;
+    const roster = rosterRaw.map((r) => ({
+      student_id: r.student_id,
+      students: Array.isArray(r.students) ? (r.students[0] ?? null) : r.students,
+    }));
 
     // Find existing successful metrics rows so we can skip them
     const { data: existingRows } = await supabase
