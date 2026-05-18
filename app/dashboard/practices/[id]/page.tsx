@@ -46,10 +46,20 @@ export default async function PracticeDetailPage({ params }: { params: { id: str
 
   const studentIds = rosterLinks.map((r) => r.student_id);
   let rosterStudents: Array<Pick<Student, 'id' | 'full_name' | 'jersey_number' | 'position' | 'dominant_hand'>> = [];
+  // Phase 9c: also load profile_id for each rostered student so the
+  // DeviceMetricsTable can resolve device connections. Kept as a separate
+  // map so the existing rosterStudents shape (used by PracticeDetailClient)
+  // doesn't change.
+  let studentProfileIds = new Map<string, string | null>();
   if (studentIds.length > 0) {
     const { data } = await supabase
       .from('students').select('id, full_name, jersey_number, position, dominant_hand').in('id', studentIds);
     rosterStudents = (data ?? []) as typeof rosterStudents;
+
+    const { data: profIdRows } = await supabase
+      .from('students').select('id, profile_id').in('id', studentIds);
+    const profIds = (profIdRows ?? []) as Array<{ id: string; profile_id: string | null }>;
+    studentProfileIds = new Map(profIds.map((p) => [p.id, p.profile_id]));
   }
 
   // Attendance
@@ -105,6 +115,15 @@ export default async function PracticeDetailPage({ params }: { params: { id: str
   const rosterIds = new Set(rosterLinks.map((r) => r.student_id));
   const addableStudents = allActive.filter((s) => !rosterIds.has(s.id));
 
+  // Phase 9c: build the roster shape DeviceMetricsTable expects.
+  // requireRole at the top already enforces staff-only access to this page,
+  // so we always render the device metrics section.
+  const metricsRoster = roster.map((r) => ({
+    student_id: r.student.id,
+    student_name: r.student.full_name,
+    profile_id: studentProfileIds.get(r.student.id) ?? null,
+  }));
+
   return (
     <>
       <PageHeader
@@ -126,6 +145,11 @@ export default async function PracticeDetailPage({ params }: { params: { id: str
         planTitle={planTitle}
         addableStudents={addableStudents}
         readOnly={seasonCtx.isArchived}
+      />
+
+      <DeviceMetricsTable
+        activityId={practice.id}
+        roster={metricsRoster}
       />
     </>
   );
