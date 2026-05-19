@@ -2946,6 +2946,61 @@ export async function logNutritionEntry(formData: FormData): Promise<{
   revalidatePath(`/dashboard/family/${student_id}/nutrition`);
   return { ok: true, id: (data as { id: string }).id };
 }
+
+/**
+ * Delete a single nutrition entry. Household-only.
+ */
+export async function deleteNutritionEntry(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const id = String(formData.get('id') ?? '').trim();
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  if (!id) return { ok: false, error: 'Missing entry id.' };
+
+  const { error } = await (supabase.from('nutrition_entries') as Any).delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/dashboard/nutrition');
+  if (student_id) revalidatePath(`/dashboard/family/${student_id}/nutrition`);
+  return { ok: true };
+}
+
+/**
+ * Delete ALL nutrition history for a student. Household-only (Q10 = A — user
+ * full control). Used by the "Delete my history" action on the nutrition page.
+ *
+ * Required form fields:
+ *   - student_id
+ *   - confirm=1 — explicit acknowledgement
+ */
+export async function deleteAllNutritionHistory(formData: FormData): Promise<{
+  ok: boolean; error?: string;
+}> {
+  await requireProfile();
+  const supabase = createClient();
+
+  const student_id = String(formData.get('student_id') ?? '').trim();
+  const confirm = String(formData.get('confirm') ?? '') === '1';
+  if (!student_id) return { ok: false, error: 'Missing student.' };
+  if (!confirm) return { ok: false, error: 'Confirmation required.' };
+
+  const { data: canView } = await (supabase.rpc as Any)('can_view_student', { sid: student_id });
+  if (!canView) {
+    return { ok: false, error: "You don't have permission to delete history for this student." };
+  }
+
+  // Delete entries AND goal — total reset
+  await (supabase.from('nutrition_entries') as Any).delete().eq('student_id', student_id);
+  await (supabase.from('nutrition_goals') as Any).delete().eq('student_id', student_id);
+
+  revalidatePath('/dashboard/nutrition');
+  revalidatePath(`/dashboard/family/${student_id}/nutrition`);
+  return { ok: true };
+}
+
 /**
  * Delete ALL nutrition history for a student. Household-only (Q10 = A — user
  * full control). Used by the "Delete my history" action on the nutrition page.
