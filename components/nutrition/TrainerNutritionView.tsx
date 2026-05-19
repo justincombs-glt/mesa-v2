@@ -1,5 +1,4 @@
-import type { NutritionEntry } from '@/lib/supabase/types';
-import type { NutritionData } from '@/lib/nutrition';
+import type { NutritionData, NutritionEntryExtended, NutritionTotals } from '@/lib/nutrition';
 
 interface Props {
   studentName: string;
@@ -11,8 +10,9 @@ interface Props {
  * strip + entries list as the household view, but with no write affordances:
  * no log button, no delete buttons, no goal editor, no danger zone.
  *
- * Designed to slot into an existing student detail page as a section, or be
- * used standalone on the trainer's per-student route.
+ * Phase 15f: surfaces macros and micros where available. Same display format
+ * as the household NutritionTracker so trainers and the athlete see identical
+ * information.
  */
 export function TrainerNutritionView({ studentName, data }: Props) {
   const { goal, today, last7Days } = data;
@@ -50,7 +50,7 @@ export function TrainerNutritionView({ studentName, data }: Props) {
 // ----------------------------------------------------------------------------
 
 function TodayPanel({ today, goal }: {
-  today: { date: string; entries: NutritionEntry[]; total: number };
+  today: { date: string; entries: NutritionEntryExtended[]; total: number; totals: NutritionTotals };
   goal: number | null;
 }) {
   if (goal === null) {
@@ -68,6 +68,7 @@ function TodayPanel({ today, goal }: {
             No daily goal set.
           </div>
         </div>
+        <MacroMicroSummary totals={today.totals} />
       </div>
     );
   }
@@ -101,16 +102,60 @@ function TodayPanel({ today, goal }: {
           aria-label={`${Math.round(pct)} percent of daily goal`}
         />
       </div>
+      <MacroMicroSummary totals={today.totals} />
     </div>
   );
 }
 
 // ----------------------------------------------------------------------------
-// 7-day strip (read-only)
+// Phase 15f: macro + micro summary (mirrors the household-view component)
+// ----------------------------------------------------------------------------
+
+function MacroMicroSummary({ totals }: { totals: NutritionTotals }) {
+  if (totals.entries_with_macros === 0) return null;
+
+  const macroBits: string[] = [];
+  if (totals.protein_g > 0) macroBits.push(`${formatNum(totals.protein_g)}g protein`);
+  if (totals.carbs_g > 0) macroBits.push(`${formatNum(totals.carbs_g)}g carbs`);
+  if (totals.fat_g > 0) macroBits.push(`${formatNum(totals.fat_g)}g fat`);
+  if (totals.fiber_g > 0) macroBits.push(`${formatNum(totals.fiber_g)}g fiber`);
+  if (totals.sodium_mg > 0) macroBits.push(`${totals.sodium_mg.toLocaleString()}mg sodium`);
+
+  const microBits: string[] = [];
+  if (totals.iron_mg > 0) microBits.push(`${formatNum(totals.iron_mg)}mg iron`);
+  if (totals.calcium_mg > 0) microBits.push(`${totals.calcium_mg.toLocaleString()}mg calcium`);
+  if (totals.vitamin_d_mcg > 0) microBits.push(`${formatNum(totals.vitamin_d_mcg)}mcg vit D`);
+  if (totals.potassium_mg > 0) microBits.push(`${totals.potassium_mg.toLocaleString()}mg potassium`);
+
+  const partial = totals.entries_with_macros < totals.entries_total;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-ink-hair space-y-1.5">
+      {macroBits.length > 0 && (
+        <div className="text-[11px] text-ink-dim">{macroBits.join(' \u00b7 ')}</div>
+      )}
+      {microBits.length > 0 && (
+        <div className="text-[11px] text-ink-dim">{microBits.join(' \u00b7 ')}</div>
+      )}
+      {partial && (
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mt-2">
+          {totals.entries_with_macros} of {totals.entries_total} entries with macro data
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatNum(n: number): string {
+  return Number.isInteger(n) ? n.toString() : n.toFixed(1);
+}
+
+// ----------------------------------------------------------------------------
+// 7-day strip (read-only, calorie-only — chart not changed in 15f)
 // ----------------------------------------------------------------------------
 
 function SevenDayPanel({ days, goal }: {
-  days: { date: string; entries: NutritionEntry[]; total: number }[];
+  days: { date: string; entries: NutritionEntryExtended[]; total: number; totals: NutritionTotals }[];
   goal: number;
 }) {
   return (
@@ -153,10 +198,10 @@ function SevenDayPanel({ days, goal }: {
 }
 
 // ----------------------------------------------------------------------------
-// Today's entries (read-only, no delete buttons)
+// Today's entries (read-only, no delete buttons). Phase 15f: macro subtitle.
 // ----------------------------------------------------------------------------
 
-function EntriesList({ entries }: { entries: NutritionEntry[] }) {
+function EntriesList({ entries }: { entries: NutritionEntryExtended[] }) {
   return (
     <div>
       <div className="kicker mb-3">Today&apos;s entries</div>
@@ -165,6 +210,12 @@ function EntriesList({ entries }: { entries: NutritionEntry[] }) {
           const time = new Date(entry.occurred_at).toLocaleTimeString('en-US', {
             hour: 'numeric', minute: '2-digit',
           });
+
+          const macroBits: string[] = [];
+          if (entry.protein_g !== null) macroBits.push(`${formatNum(Number(entry.protein_g))}g P`);
+          if (entry.carbs_g !== null) macroBits.push(`${formatNum(Number(entry.carbs_g))}g C`);
+          if (entry.fat_g !== null) macroBits.push(`${formatNum(Number(entry.fat_g))}g F`);
+
           return (
             <div
               key={entry.id}
@@ -175,6 +226,11 @@ function EntriesList({ entries }: { entries: NutritionEntry[] }) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink truncate">{entry.name}</div>
+                {macroBits.length > 0 && (
+                  <div className="text-[10px] font-mono text-ink-faint mt-0.5">
+                    {macroBits.join(' \u00b7 ')}
+                  </div>
+                )}
               </div>
               <div className="flex-shrink-0 font-mono text-sm text-ink">
                 {entry.calories.toLocaleString()}

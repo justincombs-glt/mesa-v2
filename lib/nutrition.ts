@@ -1,10 +1,57 @@
 import { createClient } from '@/lib/supabase/server';
 import type { NutritionGoal, NutritionEntry, Student } from '@/lib/supabase/types';
 
+/**
+ * Phase 15f extension: nutrition_entries gained 9 macro/micro columns. If the
+ * generated NutritionEntry type doesn't include them yet (because Supabase
+ * types haven't been regenerated post-migration), this intersection adds them
+ * so the rest of the code stays type-safe.
+ *
+ * Once you regenerate types via `supabase gen types typescript --linked`, the
+ * intersection becomes redundant but harmless.
+ */
+export type NutritionEntryExtended = NutritionEntry & {
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  sodium_mg: number | null;
+  iron_mg: number | null;
+  calcium_mg: number | null;
+  vitamin_d_mcg: number | null;
+  potassium_mg: number | null;
+};
+
+/**
+ * Daily macro and micro totals, computed from entries that have non-null
+ * values for each field. NULLs are excluded so the totals reflect ONLY what's
+ * been tracked — they're a lower bound, not the full intake of the day.
+ *
+ * `entries_with_macros` counts entries where at least one macro/micro field
+ * is non-null. Used by the UI to display "(N of M entries with macro data)"
+ * when partial.
+ */
+export interface NutritionTotals {
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  sodium_mg: number;
+  iron_mg: number;
+  calcium_mg: number;
+  vitamin_d_mcg: number;
+  potassium_mg: number;
+  /** Number of entries that had at least one non-null macro/micro field. */
+  entries_with_macros: number;
+  /** Total entries that day (for ratio display). */
+  entries_total: number;
+}
+
 export interface NutritionDay {
   date: string;              // YYYY-MM-DD
-  entries: NutritionEntry[]; // sorted by occurred_at descending
-  total: number;
+  entries: NutritionEntryExtended[]; // sorted by occurred_at descending
+  total: number;             // calories
+  totals: NutritionTotals;   // macros + micros
 }
 
 export interface NutritionData {
@@ -27,11 +74,11 @@ export interface NutritionOverviewRow {
 
 /**
  * Load nutrition data for a specific student. Returns the goal + today's
- * entries + a 7-day rollup.
+ * entries + a 7-day rollup, including macro/micro totals per day.
  *
  * Callable from server components only (uses createClient from supabase/server).
- * Access control is via RLS — if the caller isn't household, queries return
- * nothing.
+ * Access control is via RLS — if the caller isn't household or trainer,
+ * queries return nothing.
  */
 export async function buildNutritionData(studentId: string): Promise<NutritionData> {
   const supabase = createClient();
@@ -53,18 +100,16 @@ export async function buildNutritionData(studentId: string): Promise<NutritionDa
     .gte('occurred_at', sevenDaysAgo.toISOString())
     .order('occurred_at', { ascending: false });
 
-  const entries = (entryRows ?? []) as NutritionEntry[];
+  const entries = (entryRows ?? []) as NutritionEntryExtended[];
 
   // Bucket by local date
-  const byDate = new Map<string, NutritionEntry[]>();
+  const byDate = new Map<string, NutritionEntryExtended[]>();
   for (const entry of entries) {
     const d = new Date(entry.occurred_at);
     const dateKey = d.toISOString().slice(0, 10);
     if (!byDate.has(dateKey)) byDate.set(dateKey, []);
     byDate.get(dateKey)!.push(entry);
   }
-
-  const todayKey = new Date().toISOString().slice(0, 10);
 
   const last7Days: NutritionDay[] = [];
   for (let i = 0; i < 7; i++) {
@@ -73,12 +118,50 @@ export async function buildNutritionData(studentId: string): Promise<NutritionDa
     const key = d.toISOString().slice(0, 10);
     const dayEntries = byDate.get(key) ?? [];
     const total = dayEntries.reduce((sum, e) => sum + e.calories, 0);
-    last7Days.push({ date: key, entries: dayEntries, total });
+    const totals = aggregateTotals(dayEntries);
+    last7Days.push({ date: key, entries: dayEntries, total, totals });
   }
 
   const today = last7Days[0]; // first element is today since we iterated descending
 
   return { goal, today, last7Days };
+}
+
+/**
+ * Sum macros and micros across a list of entries. NULL fields are skipped
+ * (they don't contribute to the sum). Counts entries that have at least one
+ * non-null macro/micro for partial-data display.
+ */
+export function aggregateTotals(entries: NutritionEntryExtended[]): NutritionTotals {
+  const t: NutritionTotals = {
+    protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, sodium_mg: 0,
+    iron_mg: 0, calcium_mg: 0, vitamin_d_mcg: 0, potassium_mg: 0,
+    entries_with_macros: 0, entries_total: entries.length,
+  };
+  for (const e of entries) {
+    let hasAny = false;
+    if (e.protein_g !== null) { t.protein_g += Number(e.protein_g); hasAny = true; }
+    if (e.carbs_g !== null) { t.carbs_g += Number(e.carbs_g); hasAny = true; }
+    if (e.fat_g !== null) { t.fat_g += Number(e.fat_g); hasAny = true; }
+    if (e.fiber_g !== null) { t.fiber_g += Number(e.fiber_g); hasAny = true; }
+    if (e.sodium_mg !== null) { t.sodium_mg += Number(e.sodium_mg); hasAny = true; }
+    if (e.iron_mg !== null) { t.iron_mg += Number(e.iron_mg); hasAny = true; }
+    if (e.calcium_mg !== null) { t.calcium_mg += Number(e.calcium_mg); hasAny = true; }
+    if (e.vitamin_d_mcg !== null) { t.vitamin_d_mcg += Number(e.vitamin_d_mcg); hasAny = true; }
+    if (e.potassium_mg !== null) { t.potassium_mg += Number(e.potassium_mg); hasAny = true; }
+    if (hasAny) t.entries_with_macros += 1;
+  }
+  // Round once at the end to avoid drift across many additions
+  t.protein_g = Math.round(t.protein_g * 10) / 10;
+  t.carbs_g = Math.round(t.carbs_g * 10) / 10;
+  t.fat_g = Math.round(t.fat_g * 10) / 10;
+  t.fiber_g = Math.round(t.fiber_g * 10) / 10;
+  t.sodium_mg = Math.round(t.sodium_mg);
+  t.iron_mg = Math.round(t.iron_mg * 100) / 100;
+  t.calcium_mg = Math.round(t.calcium_mg);
+  t.vitamin_d_mcg = Math.round(t.vitamin_d_mcg * 10) / 10;
+  t.potassium_mg = Math.round(t.potassium_mg);
+  return t;
 }
 
 /**
@@ -164,7 +247,7 @@ export async function buildNutritionOverview(): Promise<NutritionOverviewRow[]> 
 }
 
 // ============================================================================
-// Phase 15e: all-time history loader
+// Phase 15e: all-time history loader (extended in 15f with macros/micros)
 // ============================================================================
 
 /**
@@ -178,6 +261,7 @@ export async function buildNutritionOverview(): Promise<NutritionOverviewRow[]> 
  * - Sorted most-recent-first.
  * - Also returns the current goal so the page can render "X% of goal"
  *   indicators per day (Q3 = B).
+ * - Each day now includes aggregated macro/micro totals.
  *
  * Access: RLS on nutrition_entries enforces — caller must be student-self,
  * parent-of-student, or trainer (per Phase 15a/15b policies).
@@ -198,10 +282,10 @@ export async function buildNutritionHistory(studentId: string): Promise<{
     .eq('student_id', studentId)
     .order('occurred_at', { ascending: false });
 
-  const entries = (entryRows ?? []) as NutritionEntry[];
+  const entries = (entryRows ?? []) as NutritionEntryExtended[];
 
   // Bucket by local date
-  const byDate = new Map<string, NutritionEntry[]>();
+  const byDate = new Map<string, NutritionEntryExtended[]>();
   for (const entry of entries) {
     const d = new Date(entry.occurred_at);
     const dateKey = d.toISOString().slice(0, 10);
@@ -214,7 +298,8 @@ export async function buildNutritionHistory(studentId: string): Promise<{
   const days: NutritionDay[] = [];
   for (const [date, dayEntries] of byDate) {
     const total = dayEntries.reduce((s, e) => s + e.calories, 0);
-    days.push({ date, entries: dayEntries, total });
+    const totals = aggregateTotals(dayEntries);
+    days.push({ date, entries: dayEntries, total, totals });
   }
 
   return { goal, days };

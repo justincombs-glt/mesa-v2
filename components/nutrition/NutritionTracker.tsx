@@ -12,9 +12,8 @@ import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/ui/FormField';
 import { BarcodeScanModal } from '@/components/nutrition/BarcodeScanModal';
 import { FoodAutocomplete, type HistoryItem } from '@/components/nutrition/FoodAutocomplete';
-import type { OffLookupResult } from '@/lib/openfoodfacts';
-import type { NutritionEntry } from '@/lib/supabase/types';
-import type { NutritionData } from '@/lib/nutrition';
+import type { OffLookupResult, OffNutrients } from '@/lib/openfoodfacts';
+import type { NutritionData, NutritionEntryExtended, NutritionTotals } from '@/lib/nutrition';
 
 interface Props {
   studentId: string;
@@ -87,7 +86,7 @@ function TodaySection({
   studentId, today, goal, viewerRole,
 }: {
   studentId: string;
-  today: { date: string; entries: NutritionEntry[]; total: number };
+  today: { date: string; entries: NutritionEntryExtended[]; total: number; totals: NutritionTotals };
   goal: number | null;
   viewerRole: 'student' | 'parent';
 }) {
@@ -106,7 +105,7 @@ function TodaySection({
         </button>
       </div>
 
-      <TodayProgress total={today.total} goal={goal} />
+      <TodayProgress total={today.total} goal={goal} totals={today.totals} />
 
       <div className="mt-4">
         {today.entries.length === 0 ? (
@@ -137,7 +136,7 @@ function TodaySection({
   );
 }
 
-function TodayProgress({ total, goal }: { total: number; goal: number | null }) {
+function TodayProgress({ total, goal, totals }: { total: number; goal: number | null; totals: NutritionTotals }) {
   // Shame-free UI (Q9 = C): no red bars when over, no scolding language.
   // Pure neutral display: total / goal, with a quiet fill bar.
   if (goal === null) {
@@ -152,6 +151,7 @@ function TodayProgress({ total, goal }: { total: number; goal: number | null }) 
           </div>
           <div className="text-xs text-ink-faint">Set a daily goal below to track progress.</div>
         </div>
+        <MacroMicroSummary totals={totals} />
       </div>
     );
   }
@@ -184,14 +184,65 @@ function TodayProgress({ total, goal }: { total: number; goal: number | null }) 
           aria-label={`${Math.round(pct)} percent of daily goal`}
         />
       </div>
+      <MacroMicroSummary totals={totals} />
     </div>
   );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 15f: macro + micro summary lines under the calorie progress card.
+// Renders only when at least one entry has macro data; otherwise hidden.
+// Partial-data note shown when only some entries have macros.
+// ----------------------------------------------------------------------------
+
+function MacroMicroSummary({ totals }: { totals: NutritionTotals }) {
+  if (totals.entries_with_macros === 0) return null;
+
+  const macroBits: string[] = [];
+  if (totals.protein_g > 0) macroBits.push(`${formatNum(totals.protein_g)}g protein`);
+  if (totals.carbs_g > 0) macroBits.push(`${formatNum(totals.carbs_g)}g carbs`);
+  if (totals.fat_g > 0) macroBits.push(`${formatNum(totals.fat_g)}g fat`);
+  if (totals.fiber_g > 0) macroBits.push(`${formatNum(totals.fiber_g)}g fiber`);
+  if (totals.sodium_mg > 0) macroBits.push(`${totals.sodium_mg.toLocaleString()}mg sodium`);
+
+  const microBits: string[] = [];
+  if (totals.iron_mg > 0) microBits.push(`${formatNum(totals.iron_mg)}mg iron`);
+  if (totals.calcium_mg > 0) microBits.push(`${totals.calcium_mg.toLocaleString()}mg calcium`);
+  if (totals.vitamin_d_mcg > 0) microBits.push(`${formatNum(totals.vitamin_d_mcg)}mcg vit D`);
+  if (totals.potassium_mg > 0) microBits.push(`${totals.potassium_mg.toLocaleString()}mg potassium`);
+
+  const partial = totals.entries_with_macros < totals.entries_total;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-ink-hair space-y-1.5">
+      {macroBits.length > 0 && (
+        <div className="text-[11px] text-ink-dim">
+          {macroBits.join(' \u00b7 ')}
+        </div>
+      )}
+      {microBits.length > 0 && (
+        <div className="text-[11px] text-ink-dim">
+          {microBits.join(' \u00b7 ')}
+        </div>
+      )}
+      {partial && (
+        <div className="text-[10px] font-mono uppercase tracking-wider text-ink-faint mt-2">
+          {totals.entries_with_macros} of {totals.entries_total} entries with macro data
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatNum(n: number): string {
+  // Drop trailing .0 for whole numbers; otherwise show 1 decimal
+  return Number.isInteger(n) ? n.toString() : n.toFixed(1);
 }
 
 function EntryRow({
   entry, studentId, first,
 }: {
-  entry: NutritionEntry;
+  entry: NutritionEntryExtended;
   studentId: string;
   first: boolean;
 }) {
@@ -212,6 +263,13 @@ function EntryRow({
     hour: 'numeric', minute: '2-digit',
   });
 
+  // Phase 15f: macro subtitle. Show only the big-three (protein/carbs/fat) on
+  // the per-entry row to keep it visually quiet. NULL fields are skipped.
+  const macroBits: string[] = [];
+  if (entry.protein_g !== null) macroBits.push(`${formatNum(Number(entry.protein_g))}g P`);
+  if (entry.carbs_g !== null) macroBits.push(`${formatNum(Number(entry.carbs_g))}g C`);
+  if (entry.fat_g !== null) macroBits.push(`${formatNum(Number(entry.fat_g))}g F`);
+
   return (
     <div className={`flex items-center gap-3 px-4 py-3 ${first ? '' : 'border-t border-ink-hair'}`}>
       <div className="flex-shrink-0 w-16 text-right">
@@ -219,6 +277,11 @@ function EntryRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm text-ink truncate">{entry.name}</div>
+        {macroBits.length > 0 && (
+          <div className="text-[10px] font-mono text-ink-faint mt-0.5">
+            {macroBits.join(' \u00b7 ')}
+          </div>
+        )}
       </div>
       <div className="flex-shrink-0 font-mono text-sm text-ink">
         {entry.calories.toLocaleString()}
@@ -256,6 +319,10 @@ function LogEntryModal({
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [scanInfo, setScanInfo] = useState<string | null>(null);
+  // Phase 15f: nutrients captured from a barcode scan. Stays null when the
+  // user enters food manually or picks from autocomplete (text/history) —
+  // those paths don't yet carry macros (slated for 15g).
+  const [scannedNutrients, setScannedNutrients] = useState<OffNutrients | null>(null);
 
   // Sub-modal state for barcode scanning
   const [scanOpen, setScanOpen] = useState(false);
@@ -269,6 +336,7 @@ function LogEntryModal({
       setName('');
       setCalories('');
       setScanInfo(null);
+      setScannedNutrients(null);
       setError(null);
       setHistory([]);
       return;
@@ -291,6 +359,20 @@ function LogEntryModal({
     fd.set('student_id', studentId);
     fd.set('name', name);
     fd.set('calories', calories);
+    // Phase 15f: include macros/micros when we captured them from a scan.
+    // The server action treats missing fields as null in the DB.
+    if (scannedNutrients) {
+      const n = scannedNutrients;
+      if (n.protein_g !== null) fd.set('protein_g', String(n.protein_g));
+      if (n.carbs_g !== null) fd.set('carbs_g', String(n.carbs_g));
+      if (n.fat_g !== null) fd.set('fat_g', String(n.fat_g));
+      if (n.fiber_g !== null) fd.set('fiber_g', String(n.fiber_g));
+      if (n.sodium_mg !== null) fd.set('sodium_mg', String(n.sodium_mg));
+      if (n.iron_mg !== null) fd.set('iron_mg', String(n.iron_mg));
+      if (n.calcium_mg !== null) fd.set('calcium_mg', String(n.calcium_mg));
+      if (n.vitamin_d_mcg !== null) fd.set('vitamin_d_mcg', String(n.vitamin_d_mcg));
+      if (n.potassium_mg !== null) fd.set('potassium_mg', String(n.potassium_mg));
+    }
     setSaving(true);
     setError(null);
     const res = await logNutritionEntry(fd);
@@ -307,14 +389,20 @@ function LogEntryModal({
     if (result.kind === 'found') {
       setName(result.name);
       setCalories(result.calories.toString());
-      setScanInfo(result.per === 'serving'
-        ? 'Calories per serving from Open Food Facts. Review and adjust if needed.'
-        : 'Per 100g from Open Food Facts \u2014 you may want to adjust for your actual portion.');
+      setScannedNutrients(result.nutrients);
+      // Phase 15f: enrich the scan info line with macros when present
+      const macroSummary = _summarizeNutrientsLine(result.nutrients);
+      const base = result.per === 'serving'
+        ? 'Per serving from Open Food Facts. Review and adjust if needed.'
+        : 'Per 100g from Open Food Facts \u2014 you may want to adjust for your actual portion.';
+      setScanInfo(macroSummary ? `${base} (${macroSummary})` : base);
     } else if (result.kind === 'partial') {
       setName(result.name);
       setCalories('');
+      setScannedNutrients(null);
       setScanInfo('Found the product but no calorie data \u2014 please enter calories.');
     } else {
+      setScannedNutrients(null);
       setScanInfo('Product not found in the food database \u2014 enter the details manually.');
     }
   };
@@ -401,7 +489,7 @@ function LogEntryModal({
 // ----------------------------------------------------------------------------
 
 function SevenDaySection({ days, goal, historyHref }: {
-  days: { date: string; entries: NutritionEntry[]; total: number }[];
+  days: { date: string; entries: NutritionEntryExtended[]; total: number; totals: NutritionTotals }[];
   goal: number;
   historyHref: string;
 }) {
@@ -508,7 +596,7 @@ function SevenDaySection({ days, goal, historyHref }: {
 function ExpandedDayPanel({
   day, goal, onClose,
 }: {
-  day: { date: string; entries: NutritionEntry[]; total: number };
+  day: { date: string; entries: NutritionEntryExtended[]; total: number; totals: NutritionTotals };
   goal: number;
   onClose: () => void;
 }) {
@@ -574,7 +662,7 @@ function ExpandedDayPanel({
 function ExpandedDayEntryRow({
   entry, first,
 }: {
-  entry: NutritionEntry;
+  entry: NutritionEntryExtended;
   first: boolean;
 }) {
   const time = new Date(entry.occurred_at).toLocaleTimeString('en-US', {
@@ -583,6 +671,12 @@ function ExpandedDayEntryRow({
 
   const borderClass = first ? '' : 'border-t border-ink-hair';
 
+  // Phase 15f: same compact macro subtitle as the today EntryRow
+  const macroBits: string[] = [];
+  if (entry.protein_g !== null) macroBits.push(`${formatNum(Number(entry.protein_g))}g P`);
+  if (entry.carbs_g !== null) macroBits.push(`${formatNum(Number(entry.carbs_g))}g C`);
+  if (entry.fat_g !== null) macroBits.push(`${formatNum(Number(entry.fat_g))}g F`);
+
   return (
     <div className={`flex items-center gap-3 px-4 py-3 ${borderClass}`}>
       <div className="flex-shrink-0 w-16 text-right">
@@ -590,6 +684,11 @@ function ExpandedDayEntryRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm text-ink truncate">{entry.name}</div>
+        {macroBits.length > 0 && (
+          <div className="text-[10px] font-mono text-ink-faint mt-0.5">
+            {macroBits.join(' \u00b7 ')}
+          </div>
+        )}
       </div>
       <div className="flex-shrink-0 font-mono text-sm text-ink">
         {entry.calories.toLocaleString()}
@@ -836,4 +935,20 @@ function DangerZone({ studentId, studentName }: { studentId: string; studentName
       </div>
     </section>
   );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 15f helpers
+// ----------------------------------------------------------------------------
+
+/**
+ * Compact single-line summary of macros for the scan-confirmation banner.
+ * Returns '' when no macros are available.
+ */
+function _summarizeNutrientsLine(n: OffNutrients): string {
+  const bits: string[] = [];
+  if (n.protein_g !== null) bits.push(`${formatNum(n.protein_g)}g protein`);
+  if (n.carbs_g !== null) bits.push(`${formatNum(n.carbs_g)}g carbs`);
+  if (n.fat_g !== null) bits.push(`${formatNum(n.fat_g)}g fat`);
+  return bits.join(' \u00b7 ');
 }
