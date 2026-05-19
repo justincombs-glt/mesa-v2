@@ -14,6 +14,7 @@ import { BarcodeScanModal } from '@/components/nutrition/BarcodeScanModal';
 import { FoodAutocomplete, type HistoryItem } from '@/components/nutrition/FoodAutocomplete';
 import type { OffLookupResult, OffNutrients } from '@/lib/openfoodfacts';
 import type { NutritionData, NutritionEntryExtended, NutritionTotals } from '@/lib/nutrition';
+import { MacroBar, MacroBarLegend } from '@/components/nutrition/MacroBar';
 
 interface Props {
   studentId: string;
@@ -497,6 +498,9 @@ function SevenDaySection({ days, goal, historyHref }: {
   // Today is intentionally non-expandable since it's already visible in
   // TodaySection above; tapping today's bar is a no-op.
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  // Phase 15g: chart mode toggle — defaults to calories to keep the lighter
+  // visual for users who don't care about macro detail.
+  const [chartMode, setChartMode] = useState<'calories' | 'macros'>('calories');
 
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -506,16 +510,24 @@ function SevenDaySection({ days, goal, historyHref }: {
     ? days.find((d) => d.date === expandedDate)
     : null;
 
+  // Whether any day in the 7-day window has macro data. If not, hide the
+  // toggle — there's nothing to switch to.
+  const anyMacros = days.some((d) => d.totals.entries_with_macros > 0);
+
   return (
     <section>
-      <div className="kicker mb-3">Last 7 days</div>
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <div className="kicker">Last 7 days</div>
+        {anyMacros && (
+          <ChartModeToggle mode={chartMode} onChange={setChartMode} />
+        )}
+      </div>
       <div className="card-base p-4">
         <div className="grid grid-cols-7 gap-2">
           {[...days].reverse().map((day) => {
             const date = new Date(day.date + 'T00:00:00');
             const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1);
             const dayNum = date.getDate();
-            const pct = goal > 0 ? Math.min(100, (day.total / goal) * 100) : 0;
             const isToday = day.date === todayKey;
             const isExpanded = day.date === expandedDate;
             // Q10 = A: only days with at least one entry are tappable
@@ -548,11 +560,12 @@ function SevenDaySection({ days, goal, historyHref }: {
                 <div className={`text-xs ${isToday ? 'text-ink font-medium' : 'text-ink-dim'}`}>
                   {dayNum}
                 </div>
-                <div className="h-16 w-full bg-sand-100 rounded relative overflow-hidden">
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-sage-dark transition-all"
-                    style={{ height: `${pct}%` }}
-                    aria-hidden
+                <div className="h-16 w-full">
+                  <MacroBar
+                    totalCalories={day.total}
+                    goal={goal}
+                    totals={day.totals}
+                    mode={chartMode}
                   />
                 </div>
                 <div className="text-[10px] font-mono text-ink-dim">
@@ -562,6 +575,11 @@ function SevenDaySection({ days, goal, historyHref }: {
             );
           })}
         </div>
+        {chartMode === 'macros' && anyMacros && (
+          <div className="mt-3 flex justify-center">
+            <MacroBarLegend />
+          </div>
+        )}
         <p className="text-[10px] font-mono uppercase tracking-wider text-ink-faint text-center mt-3">
           Tap a past day to see what you ate &middot; today shown above
         </p>
@@ -584,6 +602,44 @@ function SevenDaySection({ days, goal, historyHref }: {
         />
       )}
     </section>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Phase 15g: chart mode toggle button group
+// Small two-button pill that switches the 7-day strip between calorie-only
+// and macro-stacked views. Hidden when no day has macro data.
+// ----------------------------------------------------------------------------
+
+function ChartModeToggle({
+  mode, onChange,
+}: {
+  mode: 'calories' | 'macros';
+  onChange: (m: 'calories' | 'macros') => void;
+}) {
+  const baseBtn = 'text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded transition-colors';
+  const activeBtn = 'bg-ink text-paper';
+  const inactiveBtn = 'text-ink-faint hover:text-ink';
+
+  return (
+    <div className="inline-flex items-center gap-1 p-0.5 rounded bg-sand-100" role="group" aria-label="Chart view">
+      <button
+        type="button"
+        onClick={() => onChange('calories')}
+        className={`${baseBtn} ${mode === 'calories' ? activeBtn : inactiveBtn}`}
+        aria-pressed={mode === 'calories'}
+      >
+        Calories
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('macros')}
+        className={`${baseBtn} ${mode === 'macros' ? activeBtn : inactiveBtn}`}
+        aria-pressed={mode === 'macros'}
+      >
+        Macros
+      </button>
+    </div>
   );
 }
 
